@@ -107,8 +107,8 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
 
     const msg = await Message.create({ text, imageUrl, imagePublicId, author, room });
     const payload = msg.toClientJSON();
-    broadcast(`room-${room}`, 'message:new', payload);
-    res.status(201).json({ message: payload });
+    const broadcastStatus = await broadcast(`room-${room}`, 'message:new', payload);
+    res.status(201).json({ message: payload, broadcast: broadcastStatus });
   } catch (err) {
     console.error('send message failed', err);
     res.status(500).json({ error: 'Failed to send' });
