@@ -9,3 +9,7 @@ yarn-error.log*
 *.log
 .idea/
 .vscode/
+
+test-plan.md
+test-report.md
+
