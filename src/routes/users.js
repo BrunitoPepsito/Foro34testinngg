@@ -14,6 +14,31 @@ const upload = multer({
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
+// User search by username/displayName prefix.
+router.get('/', async (req, res) => {
+  try {
+    await connectDB();
+    const q = String(req.query.q || '').trim().toLowerCase().slice(0, 40);
+    if (!q || q.length < 2) return res.json({ users: [] });
+    const re = new RegExp('^' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const users = await User.find({ $or: [{ username: re }, { displayName: re }] })
+      .limit(15)
+      .select('username displayName avatarUrl color decoration nameFont');
+    res.json({ users: users.map((u) => ({
+      id: u._id.toString(),
+      username: u.username,
+      displayName: u.displayName,
+      avatarUrl: u.avatarUrl,
+      color: u.color,
+      decoration: u.decoration,
+      nameFont: u.nameFont,
+    })) });
+  } catch (err) {
+    console.error('search users', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.get('/:username', async (req, res) => {
   try {
     await connectDB();

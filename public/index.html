@@ -28,6 +28,14 @@
           <button data-route="/profile" class="nav-btn js-only-auth">👤 Mi perfil</button>
         </nav>
 
+        <div id="dmList" class="dm-list js-only-auth">
+          <div class="dm-list-head">
+            <span>Mensajes directos</span>
+            <button id="newDmBtn" class="icon-btn" title="Nuevo DM">+</button>
+          </div>
+          <div id="dmThreads"></div>
+        </div>
+
         <div id="channelList" class="channel-list hidden">
           <div class="channel-list-head">
             <span id="activeServerName">Server</span>
@@ -84,6 +92,8 @@
                     <input type="file" id="imageInput" accept="image/*" class="file-input" />
                     <span>📎</span>
                   </label>
+                  <button type="button" id="stickerBtn" class="upload js-only-auth" title="Stickers">😎</button>
+                  <button type="button" id="voiceBtn" class="upload js-only-auth" title="Nota de voz (mantén presionado)">🎙️</button>
                   <input
                     id="textInput"
                     type="text"
@@ -96,6 +106,21 @@
                 <div id="previewBar" class="preview-bar hidden">
                   <img id="previewImg" alt="preview" />
                   <button type="button" id="clearPreview" class="btn btn-ghost">Quitar</button>
+                </div>
+                <div id="voicePreview" class="voice-preview hidden">
+                  <span id="voiceTimer">0:00</span>
+                  <span id="voiceLabel">Grabando…</span>
+                  <button type="button" id="voiceStop" class="btn btn-primary">Enviar nota</button>
+                  <button type="button" id="voiceCancel" class="btn btn-ghost">Cancelar</button>
+                </div>
+                <div id="stickerPanel" class="sticker-panel hidden">
+                  <div class="sticker-panel-head">
+                    <span>Stickers</span>
+                    <label class="btn btn-ghost" for="stickerUpload">+ Subir</label>
+                    <input type="file" id="stickerUpload" accept="image/*" class="file-input" />
+                    <button type="button" id="stickerClose" class="btn btn-ghost">×</button>
+                  </div>
+                  <div id="stickerGrid" class="sticker-grid"></div>
                 </div>
               </div>
             </div>

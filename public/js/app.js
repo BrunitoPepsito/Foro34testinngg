@@ -20,6 +20,10 @@
     servers: [],          // user's servers
     activeServer: null,   // server object, null = global
     activeChannel: null,  // channel id within active server
+    dms: [],              // dm threads
+    activeDm: null,       // { room, with: {...} } when in a DM
+    stickers: [],         // user's stickers
+    voice: { recorder: null, chunks: [], started: 0, stream: null, timerId: 0 },
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -92,6 +96,13 @@
   }
   function fontClass(name) {
     return name && NAME_FONTS.includes(name) ? `font-${name}` : 'font-default';
+  }
+
+  function formatDuration(seconds) {
+    const s = Math.max(0, Math.floor(seconds || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
   }
 
   function fmtTime(ts) {
@@ -310,7 +321,13 @@
     } else {
       const txt = m.text ? `<div class="msg-text${isAction ? ' action' : ''}">${renderTextWithMentions(m.text)}</div>` : '';
       const img = m.imageUrl ? `<img class="msg-image" src="${escapeHTML(m.imageUrl)}" alt="image" />` : '';
-      body = `${replyHtml}${txt}${img}${renderReactions(m)}`;
+      const audio = m.audioUrl
+        ? `<div class="msg-audio"><audio controls preload="metadata" src="${escapeHTML(m.audioUrl)}"></audio>${m.audioDuration ? `<span class="duration">${formatDuration(m.audioDuration)}</span>` : ''}</div>`
+        : '';
+      const sticker = m.sticker && m.sticker.url
+        ? `<img class="msg-sticker" src="${escapeHTML(m.sticker.url)}" alt="${escapeHTML(m.sticker.name || 'sticker')}" title="${escapeHTML(m.sticker.name || '')}" />`
+        : '';
+      body = `${replyHtml}${txt}${img}${audio}${sticker}${renderReactions(m)}`;
     }
     const actions = isDeleted ? '' : `
       <div class="msg-actions">
@@ -824,6 +841,8 @@
         applyAuthUI();
         loadNotifications().catch(() => {});
         loadServers().catch(() => {});
+        loadDms().catch(() => {});
+        loadStickers().catch(() => {});
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -849,6 +868,8 @@
         applyAuthUI();
         loadNotifications().catch(() => {});
         loadServers().catch(() => {});
+        loadDms().catch(() => {});
+        loadStickers().catch(() => {});
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -943,11 +964,44 @@
         <div class="profile-bio">${bioHtml}</div>
         ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
         <div id="pinnedSection" class="profile-pins"><h3>📌 Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
+        <div id="achievementsSection" class="profile-achievements"><h3>🏆 Logros</h3><div id="achievementsGrid" class="achievement-grid"></div></div>
         ${isMe ? renderEditor(user) : ''}
       </div>`;
 
     loadPinnedMessages(user.username).catch(() => {});
+    renderAchievements(user);
     if (isMe) wireEditor(user);
+  }
+
+  const ACHIEVEMENT_META = {
+    first_message: { emoji: '\u270d\ufe0f', label: 'Primer mensaje' },
+    ten_messages: { emoji: '\ud83d\udcac', label: 'Charlador (10)' },
+    hundred_messages: { emoji: '\ud83d\udd25', label: 'Centuri\u00f3n (100)' },
+    thousand_messages: { emoji: '\ud83d\udc51', label: 'Leyenda (1000)' },
+    first_image: { emoji: '\ud83d\udcf8', label: 'Fot\u00f3grafo' },
+    first_voice: { emoji: '\ud83c\udf99\ufe0f', label: 'Primera voz' },
+    ten_voice: { emoji: '\ud83c\udfa7', label: 'Podcaster (10)' },
+    first_poll: { emoji: '\ud83d\udcca', label: 'Encuestador' },
+    first_sticker: { emoji: '\ud83c\udfa8', label: 'Sticker fan' },
+    first_reaction: { emoji: '\u2764\ufe0f', label: 'Reaccionado' },
+    ten_reactions: { emoji: '\ud83d\ude0d', label: 'Querido (10)' },
+    fifty_reactions: { emoji: '\u2728', label: 'Carism\u00e1tico (50)' },
+  };
+  function renderAchievements(user) {
+    const grid = $('#achievementsGrid');
+    if (!grid) return;
+    const have = new Map((user.achievements || []).map((a) => [a.key, a.unlockedAt]));
+    grid.innerHTML = Object.keys(ACHIEVEMENT_META).map((k) => {
+      const meta = ACHIEVEMENT_META[k];
+      const got = have.get(k);
+      return `<div class="achievement-card ${got ? '' : 'locked'}">
+        <span class="emoji">${meta.emoji}</span>
+        <div>
+          <div class="label">${escapeHTML(meta.label)}</div>
+          <div class="when">${got ? fmtTime(got) : 'Bloqueado'}</div>
+        </div>
+      </div>`;
+    }).join('');
   }
 
   async function loadPinnedMessages(username) {
@@ -1272,18 +1326,21 @@
     if (leave) leave.onclick = leaveActiveServer;
   }
   async function switchServer(id) {
+    state.activeDm = null;
     if (id === 'global') {
       state.activeServer = null;
       state.activeChannel = null;
       changeRoom('global');
       renderServerRail();
       renderChannelList();
+      renderDmList();
       return;
     }
     const s = state.servers.find((x) => x.id === id);
     if (!s) return;
     state.activeServer = s;
     state.activeChannel = (s.channels[0] || {}).id || null;
+    renderDmList();
     renderServerRail();
     renderChannelList();
     if (state.activeChannel) changeRoom(`srv-${s.id}-${state.activeChannel}`);
@@ -1308,9 +1365,12 @@
     renderOnlineList();
     const heading = $('.view-chat .view-head h1');
     if (heading) {
-      heading.textContent = room === 'global'
-        ? 'Chat global'
-        : `${state.activeServer.name} · #${(state.activeServer.channels.find((c) => c.id === state.activeChannel) || {}).name || ''}`;
+      if (room === 'global') heading.textContent = 'Chat global';
+      else if (room.startsWith('dm-') && state.activeDm && state.activeDm.with) {
+        heading.textContent = `\ud83d\udcac ${state.activeDm.with.displayName || state.activeDm.with.username}`;
+      } else if (state.activeServer) {
+        heading.textContent = `${state.activeServer.name} · #${(state.activeServer.channels.find((c) => c.id === state.activeChannel) || {}).name || ''}`;
+      }
     }
     state.seen.clear();
     state.messages.clear();
@@ -1379,6 +1439,206 @@
     } catch (e) { alert('Error: ' + e.message); }
   }
 
+  // ----- DMs -----
+  async function loadDms() {
+    try {
+      const r = await api('/api/dms');
+      state.dms = r.threads || [];
+    } catch (_e) { state.dms = []; }
+    renderDmList();
+  }
+  function renderDmList() {
+    const wrap = $('#dmThreads');
+    if (!wrap) return;
+    if (!state.me) { wrap.innerHTML = ''; return; }
+    if (!state.dms.length) {
+      wrap.innerHTML = '<div class="dm-empty" style="padding:8px;color:var(--muted);font-size:12px;">Sin DMs todav\u00eda</div>';
+      return;
+    }
+    wrap.innerHTML = state.dms.map((t) => {
+      const w = t.with || {};
+      const av = w.avatarUrl
+        ? `<img src="${escapeHTML(w.avatarUrl)}" alt="" />`
+        : escapeHTML((w.displayName || '?').charAt(0).toUpperCase());
+      const isActive = state.activeDm && state.activeDm.room === t.room;
+      const last = t.lastMessage && t.lastMessage.text ? t.lastMessage.text.slice(0, 60) : '';
+      return `<div class="dm-thread ${isActive ? 'active' : ''}" data-room="${escapeHTML(t.room)}" data-username="${escapeHTML(w.username || '')}">
+        <span class="av" style="background:${escapeHTML(w.color || '#7c5cff')}">${av}</span>
+        <div class="info">
+          <div class="name">${escapeHTML(w.displayName || w.username || 'Usuario')}</div>
+          <div class="last">${escapeHTML(last)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('.dm-thread').forEach((el) => {
+      el.addEventListener('click', () => openDm(el.dataset.username));
+    });
+  }
+  async function openDm(username) {
+    if (!username || !state.me) return;
+    try {
+      const r = await api(`/api/dms/with/${encodeURIComponent(username)}`, { method: 'POST' });
+      state.activeDm = { room: r.room, with: r.with };
+      state.activeServer = null;
+      state.activeChannel = null;
+      const heading = $('.view-chat .view-head h1');
+      if (heading) heading.textContent = `\ud83d\udcac ${r.with.displayName || r.with.username}`;
+      changeRoom(r.room);
+      renderDmList();
+      renderServerRail();
+      renderChannelList();
+      go('/');
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+  function setupDmControls() {
+    const btn = $('#newDmBtn');
+    if (btn) btn.addEventListener('click', async () => {
+      const q = prompt('Username de la persona:');
+      if (!q) return;
+      try {
+        await api(`/api/dms/with/${encodeURIComponent(q.trim().toLowerCase())}`, { method: 'POST' });
+        await openDm(q.trim().toLowerCase());
+        await loadDms();
+      } catch (e) { alert('Error: ' + e.message); }
+    });
+  }
+
+  // ----- Stickers -----
+  async function loadStickers() {
+    try {
+      const r = await api('/api/stickers/me');
+      state.stickers = r.stickers || [];
+    } catch (_e) { state.stickers = []; }
+    renderStickerGrid();
+  }
+  function renderStickerGrid() {
+    const grid = $('#stickerGrid');
+    if (!grid) return;
+    if (!state.stickers.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;color:var(--muted);font-size:12px;">Sub\u00ed tu primer sticker con \u201c+ Subir\u201d</div>';
+      return;
+    }
+    grid.innerHTML = state.stickers.map((s) =>
+      `<div class="sticker" data-id="${escapeHTML(s.id)}">
+        <img src="${escapeHTML(s.url)}" alt="${escapeHTML(s.name)}" />
+        <span class="name">${escapeHTML(s.name)}</span>
+        <button class="del" data-del="${escapeHTML(s.id)}" title="Borrar">\u00d7</button>
+      </div>`
+    ).join('');
+    grid.querySelectorAll('.sticker').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.matches('.del')) return;
+        sendSticker(el.dataset.id);
+      });
+    });
+    grid.querySelectorAll('.del').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('\u00bfBorrar este sticker?')) return;
+        try {
+          const r = await api(`/api/stickers/${btn.dataset.del}`, { method: 'DELETE' });
+          state.stickers = r.stickers || [];
+          renderStickerGrid();
+        } catch (err) { alert('Error: ' + err.message); }
+      });
+    });
+  }
+  async function sendSticker(id) {
+    const fd = new FormData();
+    fd.append('stickerId', id);
+    fd.append('room', state.room);
+    try {
+      const r = await api('/api/messages', { method: 'POST', body: fd });
+      if (r && r.message) appendMessage(r.message);
+      const panel = $('#stickerPanel'); if (panel) panel.classList.add('hidden');
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+  function setupStickerPicker() {
+    const btn = $('#stickerBtn');
+    const panel = $('#stickerPanel');
+    if (btn && panel) {
+      btn.addEventListener('click', () => panel.classList.toggle('hidden'));
+    }
+    const closeBtn = $('#stickerClose');
+    if (closeBtn) closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+    const upload = $('#stickerUpload');
+    if (upload) upload.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const name = prompt('Nombre del sticker (corto):', f.name.replace(/\.[^.]+$/, ''));
+      if (!name) return;
+      const fd = new FormData();
+      fd.append('image', f);
+      fd.append('name', name.slice(0, 32));
+      try {
+        const r = await api('/api/stickers', { method: 'POST', body: fd });
+        state.stickers = r.stickers || [];
+        renderStickerGrid();
+      } catch (err) { alert('Error: ' + err.message); }
+      e.target.value = '';
+    });
+  }
+
+  // ----- Voice notes -----
+  function setupVoiceRecorder() {
+    const btn = $('#voiceBtn');
+    const stopBtn = $('#voiceStop');
+    const cancelBtn = $('#voiceCancel');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      if (!state.me) { alert('Inicia sesi\u00f3n para enviar notas de voz'); return; }
+      if (state.voice.recorder) return; // already recording
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const rec = new MediaRecorder(stream);
+        state.voice.recorder = rec;
+        state.voice.chunks = [];
+        state.voice.started = Date.now();
+        state.voice.stream = stream;
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) state.voice.chunks.push(e.data); };
+        rec.onstop = onVoiceStop;
+        rec.start();
+        $('#voicePreview').classList.remove('hidden');
+        const t = $('#voiceTimer');
+        state.voice.timerId = setInterval(() => {
+          const s = Math.floor((Date.now() - state.voice.started) / 1000);
+          if (t) t.textContent = formatDuration(s);
+          if (s >= 120) state.voice.recorder && state.voice.recorder.stop();
+        }, 250);
+      } catch (e) { alert('No se puede acceder al micr\u00f3fono: ' + e.message); }
+    });
+    if (stopBtn) stopBtn.addEventListener('click', () => {
+      const r = state.voice.recorder;
+      if (r && r.state !== 'inactive') r.stop();
+    });
+    if (cancelBtn) cancelBtn.addEventListener('click', () => {
+      const r = state.voice.recorder;
+      if (r) {
+        state.voice.cancelled = true;
+        if (r.state !== 'inactive') r.stop();
+      }
+    });
+  }
+  async function onVoiceStop() {
+    const v = state.voice;
+    clearInterval(v.timerId);
+    v.timerId = 0;
+    $('#voicePreview').classList.add('hidden');
+    if (v.stream) v.stream.getTracks().forEach((t) => t.stop());
+    const cancelled = v.cancelled;
+    v.cancelled = false;
+    const blob = new Blob(v.chunks, { type: v.recorder && v.recorder.mimeType ? v.recorder.mimeType : 'audio/webm' });
+    state.voice = { recorder: null, chunks: [], started: 0, stream: null, timerId: 0 };
+    if (cancelled || !blob.size) return;
+    const fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+    fd.append('room', state.room);
+    try {
+      const r = await api('/api/messages', { method: 'POST', body: fd });
+      if (r && r.message) appendMessage(r.message);
+    } catch (e) { alert('Error enviando audio: ' + e.message); }
+  }
+
   // ----- Wire up nav -----
   function setupNav() {
     document.addEventListener('click', (e) => {
@@ -1423,7 +1683,13 @@
     if (state.me) {
       loadNotifications().catch(() => {});
       loadServers().catch(() => {});
+      loadDms().catch(() => {});
+      loadStickers().catch(() => {});
     }
+
+    setupVoiceRecorder();
+    setupStickerPicker();
+    setupDmControls();
   }
 
   boot();

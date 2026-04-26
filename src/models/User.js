@@ -36,6 +36,24 @@ const LinkSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const StickerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, maxlength: 32 },
+    url: { type: String, required: true },
+    publicId: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true },
+);
+
+const AchievementSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },
+    unlockedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const UserSchema = new mongoose.Schema(
   {
     username: {
@@ -75,6 +93,16 @@ const UserSchema = new mongoose.Schema(
 
     pinnedMessageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     notifications: { type: [NotificationSchema], default: [] },
+    stickers: { type: [StickerSchema], default: [] },
+    achievements: { type: [AchievementSchema], default: [] },
+    stats: {
+      messages: { type: Number, default: 0 },
+      reactionsReceived: { type: Number, default: 0 },
+      voiceNotes: { type: Number, default: 0 },
+      polls: { type: Number, default: 0 },
+      images: { type: Number, default: 0 },
+      stickersUsed: { type: Number, default: 0 },
+    },
   },
   { timestamps: true },
 );
@@ -99,8 +127,18 @@ UserSchema.methods.toPublicJSON = function () {
     nameFont: this.nameFont || 'default',
     links: (this.links || []).map((l) => ({ label: l.label || '', url: l.url || '' })),
     pinnedMessageIds: (this.pinnedMessageIds || []).map((id) => id.toString()),
+    achievements: (this.achievements || []).map((a) => ({ key: a.key, unlockedAt: a.unlockedAt })),
+    stats: this.stats || {},
     createdAt: this.createdAt,
   };
+};
+
+UserSchema.methods.stickersForClient = function () {
+  return (this.stickers || []).map((s) => ({
+    id: s._id.toString(),
+    name: s.name,
+    url: s.url,
+  }));
 };
 
 UserSchema.statics.DECORATIONS = DECORATIONS;

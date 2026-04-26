@@ -45,6 +45,16 @@ const MessageSchema = new mongoose.Schema(
     text: { type: String, default: '', maxlength: 2000 },
     imageUrl: { type: String, default: '' },
     imagePublicId: { type: String, default: '' },
+    // Voice note (audio) attachment
+    audioUrl: { type: String, default: '' },
+    audioPublicId: { type: String, default: '' },
+    audioDuration: { type: Number, default: 0 }, // seconds
+    // Sticker reference (when message represents a sticker send)
+    sticker: {
+      url: { type: String, default: '' },
+      name: { type: String, default: '' },
+      ownerUsername: { type: String, default: '' },
+    },
     // 'message' = normal user msg, 'system' = bot/command result, 'poll' = poll msg
     kind: { type: String, default: 'message', enum: ['message', 'system', 'poll'] },
     // Action-style messages (rendered italic, no avatar bubble)
@@ -102,6 +112,11 @@ MessageSchema.methods.toClientJSON = function () {
     id: this._id.toString(),
     text: this.deletedAt ? '' : this.text,
     imageUrl: this.deletedAt ? '' : this.imageUrl,
+    audioUrl: this.deletedAt ? '' : this.audioUrl,
+    audioDuration: this.audioDuration || 0,
+    sticker: this.sticker && this.sticker.url && !this.deletedAt
+      ? { url: this.sticker.url, name: this.sticker.name, ownerUsername: this.sticker.ownerUsername }
+      : null,
     kind: this.kind,
     isAction: this.isAction,
     author: {

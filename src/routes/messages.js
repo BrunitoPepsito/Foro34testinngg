@@ -9,12 +9,17 @@ const { uploadBuffer } = require('../lib/cloudinary');
 const { broadcast } = require('../lib/pusher');
 const { anonIdFor, anonNameFor } = require('../lib/anonid');
 const { processCommand, BOT } = require('../lib/commands');
+const ubrebot = require('../lib/ubrebot');
+const { bump } = require('../lib/achievements');
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-});
+  limits: { fileSize: 12 * 1024 * 1024 },
+}).fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'audio', maxCount: 1 },
+]);
 
 const sendLimiter = rateLimit({
   windowMs: 10 * 1000,
@@ -108,7 +113,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, res) => {
+router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
   try {
     await connectDB();
     const text = (req.body.text || '').toString().slice(0, 2000).trim();
@@ -133,17 +138,47 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
       if (!s.channels.some((c) => c._id.toString() === channelId)) {
         return res.status(404).json({ error: 'Canal no encontrado' });
       }
+    } else if (room.startsWith('dm-')) {
+      if (!req.user) return res.status(403).json({ error: 'Inicia sesi\u00f3n para DMs' });
+      const ids = room.replace(/^dm-/, '').split('-');
+      if (ids.length !== 2) return res.status(400).json({ error: 'Room DM inv\u00e1lido' });
+      if (!ids.includes(req.user.id)) return res.status(403).json({ error: 'No eres parte de este DM' });
     }
 
     let imageUrl = '';
     let imagePublicId = '';
-    if (req.file) {
-      const result = await uploadBuffer(req.file.buffer, { folder: 'foro34/messages' });
+    if (req.files && req.files.image && req.files.image[0]) {
+      const f = req.files.image[0];
+      const result = await uploadBuffer(f.buffer, { folder: 'foro34/messages' });
       imageUrl = result.secure_url;
       imagePublicId = result.public_id;
     }
 
-    if (!text && !imageUrl) {
+    let audioUrl = '';
+    let audioPublicId = '';
+    let audioDuration = 0;
+    if (req.files && req.files.audio && req.files.audio[0]) {
+      if (!req.user) return res.status(403).json({ error: 'Inicia sesi\u00f3n para enviar notas de voz' });
+      const f = req.files.audio[0];
+      const result = await uploadBuffer(f.buffer, { folder: 'foro34/voice', resource_type: 'video' });
+      audioUrl = result.secure_url;
+      audioPublicId = result.public_id;
+      audioDuration = Math.round(result.duration || 0);
+    }
+
+    // Sticker send: { stickerId, ownerUsername? } in body. Looks up the
+    // sticker on the requesting user's record.
+    let sticker = null;
+    const stickerId = (req.body.stickerId || '').toString();
+    if (stickerId) {
+      if (!req.user) return res.status(403).json({ error: 'Inicia sesi\u00f3n para enviar stickers' });
+      const u = await User.findById(req.user.id);
+      const st = u && (u.stickers || []).find((s) => s._id.toString() === stickerId);
+      if (!st) return res.status(404).json({ error: 'Sticker no encontrado' });
+      sticker = { url: st.url, name: st.name, ownerUsername: u.username };
+    }
+
+    if (!text && !imageUrl && !audioUrl && !sticker) {
       return res.status(400).json({ error: 'Empty message' });
     }
 
@@ -227,11 +262,15 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
 
     // Don't save an empty user message that was a /command-only.
     let userPayload = null;
-    if (modText || imageUrl || isPoll) {
+    if (modText || imageUrl || audioUrl || sticker || isPoll) {
       const msg = await Message.create({
         text: modText,
         imageUrl,
         imagePublicId,
+        audioUrl,
+        audioPublicId,
+        audioDuration,
+        sticker,
         kind: isPoll ? 'poll' : 'message',
         isAction,
         author,
@@ -246,6 +285,64 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
       pushMentionNotifications(userPayload, mentions, room).catch((e) =>
         console.warn('mention notif', e.message),
       );
+      // Stats + achievements (registered users only)
+      if (req.user) {
+        try {
+          const u = await User.findById(req.user.id);
+          if (u) {
+            const deltas = { messages: 1 };
+            if (imageUrl) deltas.images = 1;
+            if (audioUrl) deltas.voiceNotes = 1;
+            if (sticker) deltas.stickersUsed = 1;
+            if (isPoll) deltas.polls = 1;
+            const newly = await bump(u, deltas);
+            for (const key of newly) {
+              const note = {
+                type: 'achievement',
+                msgId: msg._id,
+                fromUsername: '',
+                fromDisplayName: 'Foro34',
+                text: `\ud83c\udfc6 Logro desbloqueado: ${key}`,
+                room,
+                read: false,
+                createdAt: new Date(),
+              };
+              u.notifications = [note, ...(u.notifications || []).slice(0, 49)];
+              await u.save();
+              broadcast(`private-user-${u._id.toString()}`, 'notification:new', { ...note }).catch(() => {});
+            }
+          }
+        } catch (e) { console.warn('achievement bump', e.message); }
+      }
+    }
+
+    // UbreBot trigger — runs before the static command bot.
+    if (userPayload && ubrebot.isMentioned(modText)) {
+      const prompt = ubrebot.stripMention(modText);
+      ubrebot.ask(prompt, { displayName: author.displayName }).then(async (reply) => {
+        try {
+          const ubre = {
+            userId: null,
+            username: ubrebot.UBREBOT_USERNAME,
+            displayName: 'UbreBot',
+            avatarUrl: '',
+            color: '#22c55e',
+            decoration: 'aurora',
+            effect: 'pulse',
+            nameFont: 'default',
+            anonymous: false,
+            bot: true,
+          };
+          const ubreMsg = await Message.create({
+            text: reply,
+            kind: 'system',
+            author: ubre,
+            room,
+            replyTo: { id: userPayload.id, authorDisplayName: author.displayName, authorColor: author.color, snippet: (modText || '').slice(0, 140), snippetImage: '' },
+          });
+          await broadcast(`room-${room}`, 'message:new', ubreMsg.toClientJSON());
+        } catch (e) { console.warn('ubrebot reply', e.message); }
+      });
     }
 
     // Bot reply (system)
@@ -346,6 +443,17 @@ router.post('/:id/reactions', authOptional, reactLimiter, async (req, res) => {
     await msg.save();
     const payload = msg.toClientJSON();
     await broadcast(`room-${msg.room}`, 'message:update', payload);
+
+    // Track reactionsReceived for the author (skip bots and self-reactions)
+    if (msg.author && msg.author.userId && !msg.author.bot) {
+      const isSelf = req.user && msg.author.userId.toString() === req.user.id;
+      if (!isSelf) {
+        try {
+          const author = await User.findById(msg.author.userId);
+          if (author) await bump(author, { reactionsReceived: 1 });
+        } catch (_e) { /* ignore */ }
+      }
+    }
     res.json({ message: payload });
   } catch (err) {
     console.error('react failed', err);
