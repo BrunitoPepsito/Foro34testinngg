@@ -13,7 +13,8 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overflow-x: hidden; max-width: 100%; }
+#app { max-width: 100%; }
 
 body {
   background: var(--bg);
@@ -31,7 +32,7 @@ a:hover { text-decoration: underline; }
 
 #app {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
 }
@@ -256,7 +257,9 @@ a:hover { text-decoration: underline; }
 }
 .profile-banner-edit {
   position: absolute; right: 16px; bottom: 16px;
+  z-index: 5;
 }
+.profile-banner-edit label { cursor: pointer; }
 
 .profile-head {
   display: flex; align-items: flex-end; gap: 20px;
@@ -291,7 +294,12 @@ a:hover { text-decoration: underline; }
   margin: 0;
   font-size: 28px;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+/* Profile section/info should not push width of the column. */
+.profile, .profile-head, .profile-info { min-width: 0; max-width: 100%; }
 .profile-info .pronouns {
   font-size: 14px;
   color: var(--muted);
@@ -542,9 +550,10 @@ a:hover { text-decoration: underline; }
 
 @media (max-width: 720px) {
   #app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
+  .sidebar, .main, .view, .profile { min-width: 0; max-width: 100%; }
   .sidebar {
     flex-direction: row;
     align-items: center;
@@ -594,6 +603,236 @@ a:hover { text-decoration: underline; }
   .profile-head { padding: 0 14px; margin-top: -44px; gap: 14px; }
   .profile-actions, .profile-bio, .profile-section, .profile-links { padding-left: 14px; padding-right: 14px; }
   .profile-info h2 { font-size: 22px; }
+  /* Banner edit button: shown on top-right of banner so it never gets
+     intercepted by the avatar/info overlap on mobile. */
+  .profile-banner-edit {
+    top: 10px; bottom: auto; right: 10px;
+  }
+  .profile-banner-edit label.btn {
+    padding: 8px 12px; font-size: 12px;
+  }
   .field-row { grid-template-columns: 1fr; }
   .form { margin: 14px; padding: 16px; }
+}
+
+/* ===== v2 ===== */
+
+/* Visually-hidden file inputs that still trigger when their <label> is tapped.
+   `display:none` / `[hidden]` works on most browsers, but Safari iOS sometimes
+   refuses to open the picker when the input is removed from the layout tree
+   inside a positioned label. This pattern keeps it focusable. */
+.file-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; opacity: 0; }
+
+/* ===== name fonts ===== */
+.font-default { font-family: inherit; }
+.font-pixel   { font-family: 'Press Start 2P', system-ui, monospace; letter-spacing: 0; line-height: 1.4; }
+.font-serif   { font-family: 'Playfair Display', 'Times New Roman', serif; font-weight: 900; letter-spacing: -.5px; }
+.font-mono    { font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-weight: 800; letter-spacing: -.3px; }
+.font-cursive { font-family: 'Caveat', 'Brush Script MT', cursive; font-weight: 700; letter-spacing: .5px; }
+.font-marker  { font-family: 'Permanent Marker', cursive; letter-spacing: .5px; }
+.font-retro   { font-family: 'Audiowide', 'Trebuchet MS', sans-serif; letter-spacing: 1px; text-transform: uppercase; }
+.font-fancy   { font-family: 'Pacifico', cursive; font-weight: 400; letter-spacing: 1px; }
+/* Pixel font is huge by default; tone it down on big headings */
+.profile-info h2.font-pixel { font-size: 20px; }
+@media (max-width: 720px) {
+  .profile-info h2.font-pixel { font-size: 14px; }
+}
+
+/* Title pill above name (e.g. "Founder", "OG"). */
+.profile-info .title-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--grad-from), var(--grad-to));
+  color: white;
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+
+/* Font-picker chip previews */
+.font-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+.font-grid label {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-3);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  text-align: center;
+  min-height: 56px;
+  overflow: hidden;
+  transition: border-color .15s;
+}
+.font-grid label.checked {
+  border-color: var(--accent, var(--primary));
+  box-shadow: 0 0 0 1px var(--accent, var(--primary));
+}
+.font-grid label input[type=radio] { position: absolute; opacity: 0; }
+.font-grid label .font-sample { white-space: nowrap; }
+
+/* ===== new decorations ===== */
+.deco-galaxy::before {
+  background:
+    radial-gradient(2px 2px at 20% 30%, white, transparent 60%),
+    radial-gradient(1px 1px at 60% 60%, white, transparent 60%),
+    radial-gradient(1.5px 1.5px at 80% 30%, white, transparent 60%),
+    conic-gradient(from 0deg, #1f0a4a, #4b1a8a, #2b0d6e, #1f0a4a);
+  filter: blur(1px);
+  animation: deco-spin 7s linear infinite;
+  box-shadow: 0 0 16px rgba(120,72,255,.5);
+}
+.deco-sakura::before {
+  background:
+    radial-gradient(circle at 25% 30%, rgba(255,182,193,.9) 0 4px, transparent 5px),
+    radial-gradient(circle at 75% 70%, rgba(255,200,210,.9) 0 4px, transparent 5px),
+    radial-gradient(circle at 50% 50%, rgba(255,160,180,.9) 0 3px, transparent 4px),
+    conic-gradient(from 0deg, #ffd1dc, #ffb6c1, #ffd1dc);
+  filter: blur(1.5px);
+  animation: deco-spin 9s linear infinite;
+}
+.deco-cyber::before {
+  background:
+    repeating-conic-gradient(from 0deg, #00ffe1 0 4deg, transparent 4deg 12deg),
+    conic-gradient(#ff00d4, #00ffe1, #ff00d4);
+  filter: blur(1.2px) saturate(140%);
+  animation: deco-spin 2.5s linear infinite;
+  box-shadow: 0 0 14px rgba(0,255,225,.55), 0 0 24px rgba(255,0,212,.35);
+}
+.deco-royal::before {
+  background: conic-gradient(from 0deg, #f7e08c, #6b3fa0, #d4a017, #6b3fa0, #f7e08c);
+  filter: blur(2px);
+  animation: deco-spin 6s linear infinite;
+  box-shadow: 0 0 16px rgba(240, 200, 80, .45);
+}
+.deco-ocean::before {
+  background: conic-gradient(from 200deg, #00d4ff, #0066ff, #00d4ff, #00ffe1, #00d4ff);
+  filter: blur(2.5px);
+  animation: deco-spin 5s linear infinite;
+  box-shadow: 0 0 14px rgba(0, 200, 255, .5);
+}
+.deco-ember::before {
+  background:
+    radial-gradient(2px 2px at 30% 30%, #ffea91, transparent 60%),
+    radial-gradient(2px 2px at 70% 70%, #ffb24c, transparent 60%),
+    radial-gradient(2px 2px at 50% 80%, #ff5c2a, transparent 60%),
+    conic-gradient(from 0deg, #5a1a00, #ff5c2a, #ffb24c, #5a1a00);
+  filter: blur(1.5px);
+  animation: deco-spin 1.8s linear infinite;
+  box-shadow: 0 0 18px rgba(255,90,40,.6);
+}
+.deco-lightning::before {
+  background:
+    repeating-conic-gradient(from 0deg, transparent 0 16deg, #ffe14a 16deg 18deg, transparent 18deg 36deg),
+    conic-gradient(from 0deg, #1a1f5a, #6b73ff, #1a1f5a);
+  filter: blur(.8px);
+  animation: deco-spin 1.2s linear infinite;
+}
+.deco-matrix::before {
+  background:
+    repeating-radial-gradient(circle at 20% 20%, #00ff7e 0 1px, transparent 2px 6px),
+    repeating-radial-gradient(circle at 80% 80%, #00cc66 0 1px, transparent 2px 6px),
+    conic-gradient(#001a0e, #003a1e, #001a0e);
+  filter: blur(.6px);
+  animation: deco-spin 4s linear infinite;
+}
+
+/* Crown sits on top of avatar (an emoji halo above the head). */
+.deco-crown::before {
+  background: radial-gradient(circle at 50% 0%, rgba(247,224,140,.6), transparent 60%);
+  filter: blur(3px);
+  animation: deco-pulse 3s ease-in-out infinite;
+  inset: -8px;
+}
+.deco-crown::after {
+  content: '👑';
+  position: absolute;
+  top: -22px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 28px;
+  text-shadow: 0 2px 6px rgba(0,0,0,.5);
+  pointer-events: none;
+  z-index: 2;
+}
+.msg-avatar.deco-crown::after,
+.me-avatar-wrap.deco-crown::after { font-size: 14px; top: -10px; }
+
+/* Halo: angelic glow ring above head. */
+.deco-halo::before {
+  background: radial-gradient(circle, rgba(255,255,200,.55), transparent 70%);
+  filter: blur(4px);
+  animation: deco-pulse 4s ease-in-out infinite;
+  inset: -6px;
+}
+.deco-halo::after {
+  content: '';
+  position: absolute;
+  top: -10px; left: 50%;
+  transform: translateX(-50%);
+  width: 110%; height: 14px;
+  border-radius: 50%;
+  border: 3px solid #ffe88a;
+  box-shadow: 0 0 14px #ffe88a;
+  pointer-events: none;
+  z-index: 2;
+}
+.msg-avatar.deco-halo::after,
+.me-avatar-wrap.deco-halo::after { height: 7px; top: -5px; border-width: 2px; }
+
+/* ===== new effects ===== */
+.effect-glitch .profile-avatar {
+  animation: eff-glitch 2.4s steps(2, end) infinite;
+}
+@keyframes eff-glitch {
+  0%, 92%, 100% { transform: translate(0,0); filter: none; }
+  93% { transform: translate(-2px, 1px); filter: hue-rotate(20deg); }
+  94% { transform: translate( 2px,-1px); filter: hue-rotate(-30deg); }
+  95% { transform: translate(-1px, 2px); filter: hue-rotate(60deg) saturate(180%); }
+  96% { transform: translate( 1px,-2px); filter: none; }
+}
+.effect-rainbowHue .profile-avatar { animation: eff-hue 6s linear infinite; }
+.effect-rainbowHue .avatar-frame::before { animation-duration: 1.5s !important; }
+@keyframes eff-hue {
+  0%   { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+.effect-float .profile-avatar { animation: eff-float 3.5s ease-in-out infinite; }
+@keyframes eff-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.effect-glow .profile-avatar { animation: eff-glow 2.4s ease-in-out infinite; }
+@keyframes eff-glow {
+  0%, 100% { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 70%, transparent); }
+  50%      { box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 90%, transparent); }
+}
+.effect-confetti .profile-banner::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(3px 3px at 10% 10%, #ff5c8a, transparent 60%),
+    radial-gradient(3px 3px at 30% 25%, #5cd0ff, transparent 60%),
+    radial-gradient(3px 3px at 50% 40%, #ffd55c, transparent 60%),
+    radial-gradient(3px 3px at 70% 30%, #5cffae, transparent 60%),
+    radial-gradient(3px 3px at 90% 50%, #c45cff, transparent 60%),
+    radial-gradient(3px 3px at 20% 70%, #ff5c8a, transparent 60%),
+    radial-gradient(3px 3px at 60% 80%, #5cd0ff, transparent 60%),
+    radial-gradient(3px 3px at 85% 75%, #ffd55c, transparent 60%);
+  background-size: 100% 100%;
+  animation: eff-confetti 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes eff-confetti {
+  0%   { transform: translateY(-30%); opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translateY(30%); opacity: 0; }
 }

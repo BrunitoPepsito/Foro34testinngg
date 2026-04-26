@@ -1,7 +1,18 @@
 const mongoose = require('mongoose');
 
-const DECORATIONS = ['none', 'neon', 'fire', 'rainbow', 'stars', 'glow', 'gold', 'aurora', 'ice', 'shadow'];
-const EFFECTS = ['none', 'pulse', 'sparkle', 'wave', 'shake'];
+const DECORATIONS = [
+  'none', 'neon', 'fire', 'rainbow', 'stars', 'glow', 'gold', 'aurora', 'ice', 'shadow',
+  // v2 — more detail
+  'galaxy', 'sakura', 'cyber', 'royal', 'ocean', 'crown', 'halo', 'ember', 'lightning', 'matrix',
+];
+const EFFECTS = [
+  'none', 'pulse', 'sparkle', 'wave', 'shake',
+  // v2
+  'glitch', 'rainbowHue', 'float', 'confetti', 'glow',
+];
+const NAME_FONTS = [
+  'default', 'pixel', 'serif', 'mono', 'cursive', 'marker', 'retro', 'fancy',
+];
 
 const LinkSchema = new mongoose.Schema(
   {
@@ -43,6 +54,8 @@ const UserSchema = new mongoose.Schema(
 
     pronouns: { type: String, default: '', maxlength: 30 },
     status: { type: String, default: '', maxlength: 80 },
+    title: { type: String, default: '', maxlength: 30 }, // small badge above name
+    nameFont: { type: String, enum: NAME_FONTS, default: 'default' },
 
     links: { type: [LinkSchema], default: [] },
   },
@@ -65,6 +78,8 @@ UserSchema.methods.toPublicJSON = function () {
     effect: this.effect,
     pronouns: this.pronouns,
     status: this.status,
+    title: this.title,
+    nameFont: this.nameFont || 'default',
     links: (this.links || []).map((l) => ({ label: l.label || '', url: l.url || '' })),
     createdAt: this.createdAt,
   };
@@ -72,5 +87,6 @@ UserSchema.methods.toPublicJSON = function () {
 
 UserSchema.statics.DECORATIONS = DECORATIONS;
 UserSchema.statics.EFFECTS = EFFECTS;
+UserSchema.statics.NAME_FONTS = NAME_FONTS;
 
 module.exports = mongoose.models.User || mongoose.model('User', UserSchema);

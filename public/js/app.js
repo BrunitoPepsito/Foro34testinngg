@@ -37,18 +37,36 @@
     return paragraphs.join('');
   }
 
-  const DECORATIONS = ['none', 'neon', 'fire', 'rainbow', 'stars', 'glow', 'gold', 'aurora', 'ice', 'shadow'];
-  const EFFECTS = ['none', 'pulse', 'sparkle', 'wave', 'shake'];
+  const DECORATIONS = [
+    'none', 'neon', 'fire', 'rainbow', 'stars', 'glow', 'gold', 'aurora', 'ice', 'shadow',
+    'galaxy', 'sakura', 'cyber', 'royal', 'ocean', 'crown', 'halo', 'ember', 'lightning', 'matrix',
+  ];
+  const EFFECTS = [
+    'none', 'pulse', 'sparkle', 'wave', 'shake',
+    'glitch', 'rainbowHue', 'float', 'confetti', 'glow',
+  ];
+  const NAME_FONTS = ['default', 'pixel', 'serif', 'mono', 'cursive', 'marker', 'retro', 'fancy'];
   const DECO_LABELS = {
     none: 'Ninguna', neon: 'Neón', fire: 'Fuego', rainbow: 'Arcoíris',
     stars: 'Estrellas', glow: 'Brillo', gold: 'Oro', aurora: 'Aurora',
     ice: 'Hielo', shadow: 'Sombra',
+    galaxy: 'Galaxia', sakura: 'Sakura', cyber: 'Cyberpunk', royal: 'Real',
+    ocean: 'Océano', crown: 'Corona', halo: 'Halo', ember: 'Brasa',
+    lightning: 'Rayo', matrix: 'Matrix',
   };
   const EFFECT_LABELS = {
     none: 'Ninguno', pulse: 'Pulso', sparkle: 'Chispas', wave: 'Onda', shake: 'Temblor',
+    glitch: 'Glitch', rainbowHue: 'Arcoíris', float: 'Flotar', confetti: 'Confeti', glow: 'Resplandor',
+  };
+  const FONT_LABELS = {
+    default: 'Aa Default', pixel: 'PIXEL', serif: 'Aa Serif', mono: '> mono',
+    cursive: 'Aa Caveat', marker: 'Marker', retro: 'RETRO', fancy: 'Pacifico',
   };
   function decoClass(name) {
     return name && DECORATIONS.includes(name) && name !== 'none' ? `deco-wrap deco-${name}` : '';
+  }
+  function fontClass(name) {
+    return name && NAME_FONTS.includes(name) ? `font-${name}` : 'font-default';
   }
 
   function fmtTime(ts) {
@@ -170,7 +188,7 @@
     const avatar = a.avatarUrl
       ? `<img src="${escapeHTML(a.avatarUrl)}" alt="" />`
       : escapeHTML((a.displayName || '?').charAt(0).toUpperCase());
-    const nameClass = a.anonymous ? 'msg-name anon' : 'msg-name clickable';
+    const nameClass = `${a.anonymous ? 'msg-name anon' : 'msg-name clickable'} ${fontClass(a.nameFont)}`;
     const nameAttrs = a.anonymous ? '' : `data-username="${escapeHTML(a.username || '')}"`;
     const imageHtml = m.imageUrl
       ? `<img class="msg-image" src="${escapeHTML(m.imageUrl)}" alt="image" />`
@@ -395,18 +413,20 @@
     container.innerHTML = `
       <div class="${profileClass}" style="${styleVars}">
         <div class="${bannerClass}">
-          ${isMe ? `<div class="profile-banner-edit"><label class="btn">📷 Cambiar banner<input type="file" id="bannerInput" accept="image/*,image/gif" hidden /></label></div>` : ''}
+          ${isMe ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput">📷 Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>` : ''}
         </div>
         <div class="profile-head">
           <div class="${avatarFrameClasses}">${avatarTag}</div>
           <div class="profile-info">
-            <h2 style="color:${escapeHTML(accent)}">${escapeHTML(user.displayName)} ${pronounsHtml}</h2>
+            ${user.title ? `<div class="title-badge">${escapeHTML(user.title)}</div>` : ''}
+            <h2 class="${fontClass(user.nameFont)}" style="color:${escapeHTML(accent)}">${escapeHTML(user.displayName)} ${pronounsHtml}</h2>
             <div class="handle">@${escapeHTML(user.username)}</div>
             ${statusHtml}
           </div>
         </div>
         ${isMe ? `<div class="profile-actions">
-          <label class="btn btn-primary">📸 Cambiar foto<input type="file" id="avatarInput" accept="image/*,image/gif" hidden /></label>
+          <label class="btn btn-primary" for="avatarInput">📸 Cambiar foto</label>
+          <input type="file" id="avatarInput" accept="image/*,image/gif" class="file-input" />
           <button class="btn" id="copyProfileLink">🔗 Copiar enlace</button>
         </div>` : ''}
         <div class="profile-bio">${bioHtml}</div>
@@ -429,6 +449,11 @@
         <input type="radio" name="effect" value="${e}" ${user.effect === e ? 'checked' : ''} />
         <div class="name">${escapeHTML(EFFECT_LABELS[e])}</div>
       </label>`).join('');
+    const fontCards = NAME_FONTS.map((f) => `
+      <label class="${user.nameFont === f ? 'checked' : ''}" data-font="${f}">
+        <input type="radio" name="nameFont" value="${f}" ${user.nameFont === f ? 'checked' : ''} />
+        <span class="font-sample ${fontClass(f)}">${escapeHTML(FONT_LABELS[f])}</span>
+      </label>`).join('');
 
     const links = user.links && user.links.length ? user.links : [{ label: '', url: '' }];
     const linksRows = links.map((l, i) => `
@@ -442,6 +467,12 @@
       <div class="profile-section">
         <h3>Editar perfil</h3>
         <form id="profileForm" class="profile-form">
+          <div class="field-row">
+            <label>Título (badge sobre el nombre)<input name="title" maxlength="30" placeholder="Founder, OG, MOD…" value="${escapeHTML(user.title || '')}" /></label>
+            <label>Fuente del nombre
+              <div class="font-grid" id="fontGrid">${fontCards}</div>
+            </label>
+          </div>
           <div class="field-row">
             <label>Nombre visible<input name="displayName" maxlength="40" value="${escapeHTML(user.displayName)}" /></label>
             <label>Pronombres<input name="pronouns" maxlength="30" placeholder="él / ella / they" value="${escapeHTML(user.pronouns || '')}" /></label>
@@ -493,7 +524,8 @@
     }
     const decoGrid = $('#decoGrid');
     const effGrid = $('#effectGrid');
-    [decoGrid, effGrid].forEach((grid) => {
+    const fontGrid = $('#fontGrid');
+    [decoGrid, effGrid, fontGrid].forEach((grid) => {
       if (!grid) return;
       grid.addEventListener('change', () => refreshChecked(grid));
     });
@@ -516,12 +548,28 @@
       profileEl.style.setProperty('--banner-bg', fd.get('bannerColor') || '#1b1f27');
       if (nameEl) {
         nameEl.style.color = accent;
-        // Strip current text node, keep pronouns span.
         const dn = fd.get('displayName') || user.displayName;
         const pron = fd.get('pronouns') || '';
         let html = escapeHTML(dn);
         if (pron) html += ` <span class="pronouns">${escapeHTML(pron)}</span>`;
         nameEl.innerHTML = html;
+        // Update font class.
+        NAME_FONTS.forEach((f) => nameEl.classList.remove(`font-${f}`));
+        nameEl.classList.add(fontClass(fd.get('nameFont') || 'default'));
+      }
+      // Title badge: create / update / remove.
+      const infoEl = profileEl.querySelector('.profile-info');
+      let titleEl = infoEl && infoEl.querySelector('.title-badge');
+      const titleVal = (fd.get('title') || '').trim();
+      if (titleVal) {
+        if (!titleEl) {
+          titleEl = document.createElement('div');
+          titleEl.className = 'title-badge';
+          infoEl.insertBefore(titleEl, infoEl.firstChild);
+        }
+        titleEl.textContent = titleVal;
+      } else if (titleEl) {
+        titleEl.remove();
       }
       if (statusEl) {
         const v = fd.get('status') || '';
@@ -581,6 +629,8 @@
           method: 'PATCH',
           body: {
             displayName: fd.get('displayName'),
+            title: fd.get('title'),
+            nameFont: fd.get('nameFont'),
             pronouns: fd.get('pronouns'),
             status: fd.get('status'),
             bio: fd.get('bio'),

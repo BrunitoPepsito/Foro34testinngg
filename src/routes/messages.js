@@ -95,6 +95,7 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
         color: user.color,
         decoration: user.decoration || 'none',
         effect: user.effect || 'none',
+        nameFont: user.nameFont || 'default',
         anonymous: false,
       };
     } else {
@@ -107,6 +108,7 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
         color: '#9aa0aa',
         decoration: 'none',
         effect: 'none',
+        nameFont: 'default',
         anonymous: true,
       };
     }

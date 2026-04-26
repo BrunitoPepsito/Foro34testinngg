@@ -46,6 +46,10 @@ router.patch('/me', authRequired, async (req, res) => {
     }
     if (typeof b.pronouns === 'string') user.pronouns = b.pronouns.slice(0, 30);
     if (typeof b.status === 'string') user.status = b.status.slice(0, 80);
+    if (typeof b.title === 'string') user.title = b.title.slice(0, 30);
+    if (typeof b.nameFont === 'string' && User.NAME_FONTS.includes(b.nameFont)) {
+      user.nameFont = b.nameFont;
+    }
     if (Array.isArray(b.links)) {
       user.links = b.links
         .slice(0, 5)

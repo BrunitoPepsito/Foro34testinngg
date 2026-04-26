@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Foro34 — Chat en tiempo real</title>
     <link rel="stylesheet" href="/css/style.css?v=__ASSET_V__" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@600;800&family=Caveat:wght@600;700&family=Permanent+Marker&family=Audiowide&family=Pacifico&display=swap" rel="stylesheet" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E" />
   </head>
   <body>
@@ -54,7 +57,7 @@
           <div id="messages" class="messages" aria-live="polite"></div>
           <form id="composer" class="composer">
             <label class="upload" title="Adjuntar imagen / GIF">
-              <input type="file" id="imageInput" accept="image/*" hidden />
+              <input type="file" id="imageInput" accept="image/*" class="file-input" />
               <span>📎</span>
             </label>
             <input
