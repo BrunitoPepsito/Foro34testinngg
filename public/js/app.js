@@ -18,6 +18,39 @@
     return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Lightweight, intentionally-tiny markdown for bios. We HTML-escape first
+  // so user content cannot inject tags, then unescape only the recognised
+  // patterns into safe wrappers.
+  function renderBioMarkdown(str) {
+    if (!str) return '';
+    let s = escapeHTML(str);
+    // Links: [label](https://...)  http(s) only.
+    s = s.replace(/\[([^\]]{1,80})\]\((https?:\/\/[^\s)]{1,200})\)/g,
+      (_m, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+    // Bold then italic (greedy-safe-ish for short bios).
+    s = s.replace(/\*\*([^*\n]{1,200})\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]{1,200})\*(?!\*)/g, '$1<em>$2</em>');
+    // Inline code.
+    s = s.replace(/`([^`\n]{1,120})`/g, '<code>$1</code>');
+    // Paragraphs from blank lines, single newlines -> <br>.
+    const paragraphs = s.split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`);
+    return paragraphs.join('');
+  }
+
+  const DECORATIONS = ['none', 'neon', 'fire', 'rainbow', 'stars', 'glow', 'gold', 'aurora', 'ice', 'shadow'];
+  const EFFECTS = ['none', 'pulse', 'sparkle', 'wave', 'shake'];
+  const DECO_LABELS = {
+    none: 'Ninguna', neon: 'Neón', fire: 'Fuego', rainbow: 'Arcoíris',
+    stars: 'Estrellas', glow: 'Brillo', gold: 'Oro', aurora: 'Aurora',
+    ice: 'Hielo', shadow: 'Sombra',
+  };
+  const EFFECT_LABELS = {
+    none: 'Ninguno', pulse: 'Pulso', sparkle: 'Chispas', wave: 'Onda', shake: 'Temblor',
+  };
+  function decoClass(name) {
+    return name && DECORATIONS.includes(name) && name !== 'none' ? `deco-wrap deco-${name}` : '';
+  }
+
   function fmtTime(ts) {
     const d = new Date(ts);
     const now = new Date();
@@ -84,6 +117,15 @@
       if (a) {
         a.src = state.me.avatarUrl || avatarFallback(state.me.displayName);
         a.onerror = () => { a.src = avatarFallback(state.me.displayName); };
+        // Apply decoration to the dedicated avatar wrapper around the IMG only.
+        const wrap = a.closest('.me-avatar-wrap') || a.parentElement;
+        if (wrap) {
+          DECORATIONS.forEach((d) => wrap.classList.remove(`deco-${d}`));
+          wrap.classList.remove('deco-wrap');
+          if (state.me.decoration && state.me.decoration !== 'none') {
+            wrap.classList.add('deco-wrap', `deco-${state.me.decoration}`);
+          }
+        }
       }
       $$('[data-bind="me.displayName"]').forEach((e) => (e.textContent = state.me.displayName));
       $$('[data-bind="me.username"]').forEach((e) => (e.textContent = state.me.username));
@@ -133,8 +175,9 @@
     const imageHtml = m.imageUrl
       ? `<img class="msg-image" src="${escapeHTML(m.imageUrl)}" alt="image" />`
       : '';
+    const dClass = decoClass(a.decoration);
     wrap.innerHTML = `
-      <div class="msg-avatar" style="background:${escapeHTML(a.color || '#7c5cff')}">${avatar}</div>
+      <div class="msg-avatar ${dClass}" style="background:${escapeHTML(a.color || '#7c5cff')}">${avatar}</div>
       <div class="msg-body">
         <div class="msg-head">
           <span class="${nameClass}" ${nameAttrs} style="color:${escapeHTML(a.color || '#fff')}">${escapeHTML(a.displayName || 'Anon')}</span>
@@ -312,66 +355,264 @@
     }
 
     container.innerHTML = '<div class="profile"><p class="muted" style="padding:24px">Cargando…</p></div>';
+    let user;
     try {
-      const { user } = await api(`/api/users/${encodeURIComponent(username)}`);
-      const isMe = state.me && state.me.username === user.username;
-      const banner = user.bannerUrl
-        ? `style="background-image:url('${escapeHTML(user.bannerUrl)}')"`
-        : '';
-      const avatar = user.avatarUrl
-        ? `<img class="profile-avatar" src="${escapeHTML(user.avatarUrl)}" alt="" />`
-        : `<img class="profile-avatar" src="${avatarFallback(user.displayName)}" alt="" />`;
-
-      container.innerHTML = `
-        <div class="profile">
-          <div class="profile-banner" ${banner}>
-            ${isMe ? `<div class="profile-banner-edit"><label class="btn">Cambiar banner<input type="file" id="bannerInput" accept="image/*" hidden /></label></div>` : ''}
-          </div>
-          <div class="profile-head">
-            ${avatar}
-            <div class="profile-info">
-              <h2 style="color:${escapeHTML(user.color || '#fff')}">${escapeHTML(user.displayName)}</h2>
-              <div class="muted">@${escapeHTML(user.username)}</div>
-            </div>
-            ${isMe ? `<div class="profile-actions"><label class="btn">Cambiar foto<input type="file" id="avatarInput" accept="image/*" hidden /></label></div>` : ''}
-          </div>
-          <div class="profile-bio">${escapeHTML(user.bio || (isMe ? 'Edita tu perfil debajo para añadir una bio.' : 'Sin bio.'))}</div>
-          ${isMe ? `
-          <div class="profile-section">
-            <h3>Editar perfil</h3>
-            <form id="profileForm" class="profile-form">
-              <label>Nombre visible<input name="displayName" maxlength="40" value="${escapeHTML(user.displayName)}" /></label>
-              <label>Bio<textarea name="bio" maxlength="280">${escapeHTML(user.bio || '')}</textarea></label>
-              <label>Color del nombre<div class="color-row"><input type="color" name="color" value="${escapeHTML(user.color || '#7c5cff')}" /><span class="muted">Aparece en tus mensajes</span></div></label>
-              <button class="btn btn-primary" type="submit">Guardar</button>
-              <p class="form-error" id="profileError"></p>
-            </form>
-          </div>` : ''}
-        </div>`;
-
-      if (isMe) {
-        $('#profileForm').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const fd = new FormData(e.target);
-          const errorEl = $('#profileError');
-          errorEl.textContent = '';
-          try {
-            const data = await api('/api/users/me', {
-              method: 'PATCH',
-              body: { displayName: fd.get('displayName'), bio: fd.get('bio'), color: fd.get('color') },
-            });
-            state.me = data.user;
-            applyAuthUI();
-            renderProfileView();
-          } catch (err) {
-            errorEl.textContent = err.message;
-          }
-        });
-        $('#avatarInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'avatar'));
-        $('#bannerInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'banner'));
-      }
+      ({ user } = await api(`/api/users/${encodeURIComponent(username)}`));
     } catch (err) {
       container.innerHTML = `<div class="form"><p>Error: ${escapeHTML(err.message)}</p></div>`;
+      return;
+    }
+    const isMe = state.me && state.me.username === user.username;
+
+    const accent = user.color || '#7c5cff';
+    const gradFrom = user.gradientFrom || '#7c5cff';
+    const gradTo = user.gradientTo || '#ff5c8a';
+    const bannerBg = user.bannerColor || '#1b1f27';
+    const decoration = user.decoration && DECORATIONS.includes(user.decoration) ? user.decoration : 'none';
+    const effect = user.effect && EFFECTS.includes(user.effect) ? user.effect : 'none';
+
+    const styleVars =
+      `--accent:${accent};--grad-from:${gradFrom};--grad-to:${gradTo};` +
+      `--banner-bg:${bannerBg};` +
+      (user.bannerUrl ? `--banner-image:url('${user.bannerUrl.replace(/'/g, "\\'")}');` : '');
+
+    const bannerClass = user.bannerUrl ? 'profile-banner has-image' : 'profile-banner';
+    const profileClass = `profile effect-${effect}`;
+
+    const avatarTag = `<img class="profile-avatar" src="${escapeHTML(user.avatarUrl || avatarFallback(user.displayName))}" alt="" />`;
+    const avatarFrameClasses = `avatar-frame ${decoration !== 'none' ? `deco-wrap deco-${decoration}` : ''}`;
+
+    const pronounsHtml = user.pronouns
+      ? `<span class="pronouns">${escapeHTML(user.pronouns)}</span>` : '';
+    const statusHtml = user.status
+      ? `<div class="status">${escapeHTML(user.status)}</div>` : '';
+    const linksHtml = (user.links || []).filter((l) => l.url).map((l) => {
+      const safeUrl = /^https?:\/\//i.test(l.url) ? l.url : `https://${l.url}`;
+      return `<a href="${escapeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(l.label || safeUrl.replace(/^https?:\/\//, ''))}</a>`;
+    }).join('');
+    const bioHtml = renderBioMarkdown(user.bio || (isMe ? '_Edita tu perfil para añadir una bio._' : 'Sin bio.'));
+
+    container.innerHTML = `
+      <div class="${profileClass}" style="${styleVars}">
+        <div class="${bannerClass}">
+          ${isMe ? `<div class="profile-banner-edit"><label class="btn">📷 Cambiar banner<input type="file" id="bannerInput" accept="image/*,image/gif" hidden /></label></div>` : ''}
+        </div>
+        <div class="profile-head">
+          <div class="${avatarFrameClasses}">${avatarTag}</div>
+          <div class="profile-info">
+            <h2 style="color:${escapeHTML(accent)}">${escapeHTML(user.displayName)} ${pronounsHtml}</h2>
+            <div class="handle">@${escapeHTML(user.username)}</div>
+            ${statusHtml}
+          </div>
+        </div>
+        ${isMe ? `<div class="profile-actions">
+          <label class="btn btn-primary">📸 Cambiar foto<input type="file" id="avatarInput" accept="image/*,image/gif" hidden /></label>
+          <button class="btn" id="copyProfileLink">🔗 Copiar enlace</button>
+        </div>` : ''}
+        <div class="profile-bio">${bioHtml}</div>
+        ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
+        ${isMe ? renderEditor(user) : ''}
+      </div>`;
+
+    if (isMe) wireEditor(user);
+  }
+
+  function renderEditor(user) {
+    const decoCards = DECORATIONS.map((d) => `
+      <label class="${user.decoration === d ? 'checked' : ''}" data-deco="${d}">
+        <input type="radio" name="decoration" value="${d}" ${user.decoration === d ? 'checked' : ''} />
+        <div class="preview ${d !== 'none' ? `deco-wrap deco-${d}` : ''}"></div>
+        <div class="name">${escapeHTML(DECO_LABELS[d])}</div>
+      </label>`).join('');
+    const effectCards = EFFECTS.map((e) => `
+      <label class="${user.effect === e ? 'checked' : ''}" data-effect="${e}">
+        <input type="radio" name="effect" value="${e}" ${user.effect === e ? 'checked' : ''} />
+        <div class="name">${escapeHTML(EFFECT_LABELS[e])}</div>
+      </label>`).join('');
+
+    const links = user.links && user.links.length ? user.links : [{ label: '', url: '' }];
+    const linksRows = links.map((l, i) => `
+      <div class="link-row" data-i="${i}">
+        <input class="link-label" placeholder="Etiqueta" maxlength="30" value="${escapeHTML(l.label || '')}" />
+        <input class="link-url" placeholder="https://…" maxlength="200" value="${escapeHTML(l.url || '')}" />
+        <button type="button" class="btn btn-ghost link-del" title="Quitar">✕</button>
+      </div>`).join('');
+
+    return `
+      <div class="profile-section">
+        <h3>Editar perfil</h3>
+        <form id="profileForm" class="profile-form">
+          <div class="field-row">
+            <label>Nombre visible<input name="displayName" maxlength="40" value="${escapeHTML(user.displayName)}" /></label>
+            <label>Pronombres<input name="pronouns" maxlength="30" placeholder="él / ella / they" value="${escapeHTML(user.pronouns || '')}" /></label>
+          </div>
+          <label>Estado<input name="status" maxlength="80" placeholder="¿qué estás haciendo?" value="${escapeHTML(user.status || '')}" /></label>
+          <label>Bio (admite **negrita**, *cursiva*, [enlace](url) y \`código\`)
+            <textarea name="bio" maxlength="500">${escapeHTML(user.bio || '')}</textarea>
+          </label>
+          <div class="field-row">
+            <label>Color de acento<div class="color-row"><input type="color" name="color" value="${escapeHTML(user.color || '#7c5cff')}" /><span class="muted">Tu nombre y enlaces</span></div></label>
+            <label>Color del banner (sin imagen)<div class="color-row"><input type="color" name="bannerColor" value="${escapeHTML(user.bannerColor || '#1b1f27')}" /></div></label>
+          </div>
+          <div class="field-row">
+            <label>Gradient inicio<div class="color-row"><input type="color" name="gradientFrom" value="${escapeHTML(user.gradientFrom || '#7c5cff')}" /></div></label>
+            <label>Gradient fin<div class="color-row"><input type="color" name="gradientTo" value="${escapeHTML(user.gradientTo || '#ff5c8a')}" /></div></label>
+          </div>
+          <label>Decoración del avatar
+            <div class="deco-grid" id="decoGrid">${decoCards}</div>
+          </label>
+          <label>Efecto del perfil
+            <div class="effect-grid" id="effectGrid">${effectCards}</div>
+          </label>
+          <label>Enlaces (max 5)
+            <div class="links-editor" id="linksEditor">${linksRows}</div>
+            <button type="button" class="btn btn-ghost" id="addLink" style="align-self:flex-start;margin-top:6px">+ Añadir enlace</button>
+          </label>
+          <button class="btn btn-primary" type="submit">Guardar cambios</button>
+          <p class="form-error" id="profileError"></p>
+        </form>
+      </div>`;
+  }
+
+  function collectLinks(root) {
+    return $$('.link-row', root).map((row) => ({
+      label: row.querySelector('.link-label').value.trim(),
+      url: row.querySelector('.link-url').value.trim(),
+    })).filter((l) => l.url || l.label);
+  }
+
+  function wireEditor(user) {
+    const form = $('#profileForm');
+
+    // Decoration / effect picker styling.
+    function refreshChecked(grid) {
+      $$('label', grid).forEach((lbl) => {
+        const input = lbl.querySelector('input');
+        lbl.classList.toggle('checked', input && input.checked);
+      });
+    }
+    const decoGrid = $('#decoGrid');
+    const effGrid = $('#effectGrid');
+    [decoGrid, effGrid].forEach((grid) => {
+      if (!grid) return;
+      grid.addEventListener('change', () => refreshChecked(grid));
+    });
+
+    // Live preview while typing.
+    const profileEl = $('.profile');
+    const bannerEl = profileEl.querySelector('.profile-banner');
+    const avatarFrame = profileEl.querySelector('.avatar-frame');
+    const nameEl = profileEl.querySelector('.profile-info h2');
+    const pronounsEl = profileEl.querySelector('.profile-info .pronouns');
+    const statusEl = profileEl.querySelector('.profile-info .status');
+    const bioEl = profileEl.querySelector('.profile-bio');
+
+    function applyPreview() {
+      const fd = new FormData(form);
+      const accent = fd.get('color') || '#7c5cff';
+      profileEl.style.setProperty('--accent', accent);
+      profileEl.style.setProperty('--grad-from', fd.get('gradientFrom') || '#7c5cff');
+      profileEl.style.setProperty('--grad-to', fd.get('gradientTo') || '#ff5c8a');
+      profileEl.style.setProperty('--banner-bg', fd.get('bannerColor') || '#1b1f27');
+      if (nameEl) {
+        nameEl.style.color = accent;
+        // Strip current text node, keep pronouns span.
+        const dn = fd.get('displayName') || user.displayName;
+        const pron = fd.get('pronouns') || '';
+        let html = escapeHTML(dn);
+        if (pron) html += ` <span class="pronouns">${escapeHTML(pron)}</span>`;
+        nameEl.innerHTML = html;
+      }
+      if (statusEl) {
+        const v = fd.get('status') || '';
+        statusEl.textContent = v;
+        statusEl.style.display = v ? '' : 'none';
+      } else if (fd.get('status')) {
+        // create one if missing on initial render with no status
+        const s = document.createElement('div');
+        s.className = 'status';
+        s.textContent = fd.get('status');
+        profileEl.querySelector('.profile-info').appendChild(s);
+      }
+      if (bioEl) bioEl.innerHTML = renderBioMarkdown(fd.get('bio') || '');
+      // Decoration class on avatar frame.
+      if (avatarFrame) {
+        DECORATIONS.forEach((d) => avatarFrame.classList.remove(`deco-${d}`));
+        avatarFrame.classList.remove('deco-wrap');
+        const newDeco = fd.get('decoration') || 'none';
+        if (newDeco !== 'none') avatarFrame.classList.add('deco-wrap', `deco-${newDeco}`);
+      }
+      // Effect on profile container.
+      EFFECTS.forEach((e) => profileEl.classList.remove(`effect-${e}`));
+      profileEl.classList.add(`effect-${fd.get('effect') || 'none'}`);
+      if (bannerEl && !bannerEl.classList.contains('has-image')) {
+        // already drives via CSS vars.
+      }
+    }
+    form.addEventListener('input', applyPreview);
+    form.addEventListener('change', applyPreview);
+
+    // Links editor.
+    const linksEditor = $('#linksEditor');
+    $('#addLink').addEventListener('click', () => {
+      if ($$('.link-row', linksEditor).length >= 5) return;
+      const div = document.createElement('div');
+      div.className = 'link-row';
+      div.innerHTML = `
+        <input class="link-label" placeholder="Etiqueta" maxlength="30" />
+        <input class="link-url" placeholder="https://…" maxlength="200" />
+        <button type="button" class="btn btn-ghost link-del" title="Quitar">✕</button>`;
+      linksEditor.appendChild(div);
+    });
+    linksEditor.addEventListener('click', (e) => {
+      const btn = e.target.closest('.link-del');
+      if (!btn) return;
+      btn.closest('.link-row').remove();
+    });
+
+    // Submit.
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const errorEl = $('#profileError');
+      errorEl.textContent = '';
+      try {
+        const data = await api('/api/users/me', {
+          method: 'PATCH',
+          body: {
+            displayName: fd.get('displayName'),
+            pronouns: fd.get('pronouns'),
+            status: fd.get('status'),
+            bio: fd.get('bio'),
+            color: fd.get('color'),
+            bannerColor: fd.get('bannerColor'),
+            gradientFrom: fd.get('gradientFrom'),
+            gradientTo: fd.get('gradientTo'),
+            decoration: fd.get('decoration'),
+            effect: fd.get('effect'),
+            links: collectLinks(linksEditor),
+          },
+        });
+        state.me = data.user;
+        applyAuthUI();
+        renderProfileView();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    });
+
+    $('#avatarInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'avatar'));
+    $('#bannerInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'banner'));
+
+    const copyBtn = $('#copyProfileLink');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
+          copyBtn.textContent = '✓ Copiado';
+          setTimeout(() => { copyBtn.textContent = '🔗 Copiar enlace'; }, 1200);
+        } catch (_e) { /* ignore */ }
+      });
     }
   }
 

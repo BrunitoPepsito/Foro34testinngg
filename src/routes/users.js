@@ -11,6 +11,8 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 },
 });
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
 router.get('/:username', async (req, res) => {
   try {
     await connectDB();
@@ -28,10 +30,32 @@ router.patch('/me', authRequired, async (req, res) => {
     await connectDB();
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
-    const { displayName, bio, color } = req.body || {};
-    if (typeof displayName === 'string') user.displayName = displayName.slice(0, 40);
-    if (typeof bio === 'string') user.bio = bio.slice(0, 280);
-    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) user.color = color;
+
+    const b = req.body || {};
+    if (typeof b.displayName === 'string') user.displayName = b.displayName.slice(0, 40);
+    if (typeof b.bio === 'string') user.bio = b.bio.slice(0, 500);
+    if (typeof b.color === 'string' && HEX.test(b.color)) user.color = b.color;
+    if (typeof b.bannerColor === 'string' && HEX.test(b.bannerColor)) user.bannerColor = b.bannerColor;
+    if (typeof b.gradientFrom === 'string' && HEX.test(b.gradientFrom)) user.gradientFrom = b.gradientFrom;
+    if (typeof b.gradientTo === 'string' && HEX.test(b.gradientTo)) user.gradientTo = b.gradientTo;
+    if (typeof b.decoration === 'string' && User.DECORATIONS.includes(b.decoration)) {
+      user.decoration = b.decoration;
+    }
+    if (typeof b.effect === 'string' && User.EFFECTS.includes(b.effect)) {
+      user.effect = b.effect;
+    }
+    if (typeof b.pronouns === 'string') user.pronouns = b.pronouns.slice(0, 30);
+    if (typeof b.status === 'string') user.status = b.status.slice(0, 80);
+    if (Array.isArray(b.links)) {
+      user.links = b.links
+        .slice(0, 5)
+        .map((l) => ({
+          label: typeof l.label === 'string' ? l.label.slice(0, 30) : '',
+          url: typeof l.url === 'string' ? l.url.slice(0, 200) : '',
+        }))
+        .filter((l) => l.url || l.label);
+    }
+
     await user.save();
     res.json({ user: user.toPublicJSON() });
   } catch (err) {
@@ -53,20 +77,31 @@ async function handleMediaUpload(req, res, field) {
       cld.uploader.destroy(oldId).catch((e) => console.warn('cld destroy', e.message));
     }
 
-    const uploadOpts = {
+    // Upload original (no upload-time crop) so animated GIFs / WebP keep
+    // their animation. Cloudinary applies size + crop on delivery via URL
+    // transformations below, which preserves animation across all frames.
+    const result = await uploadBuffer(req.file.buffer, {
       folder: `foro34/${field}s`,
-      transformation:
-        field === 'avatar'
-          ? [{ width: 256, height: 256, crop: 'fill', gravity: 'face' }]
-          : [{ width: 1500, height: 500, crop: 'fill' }],
-    };
-    const result = await uploadBuffer(req.file.buffer, uploadOpts);
+      resource_type: 'image',
+    });
+
+    // Generate a delivery URL with size, crop, auto-format, and quality.
+    // f_auto serves animated WebP/AVIF where supported; falls back to GIF.
+    const transformation =
+      field === 'avatar'
+        ? [{ width: 256, height: 256, crop: 'fill', gravity: 'auto' }, { quality: 'auto', fetch_format: 'auto' }]
+        : [{ width: 1500, height: 500, crop: 'fill' }, { quality: 'auto', fetch_format: 'auto' }];
+    const deliveryUrl = cld.url(result.public_id, {
+      secure: true,
+      resource_type: 'image',
+      transformation,
+    });
 
     if (field === 'avatar') {
-      user.avatarUrl = result.secure_url;
+      user.avatarUrl = deliveryUrl;
       user.avatarPublicId = result.public_id;
     } else {
-      user.bannerUrl = result.secure_url;
+      user.bannerUrl = deliveryUrl;
       user.bannerPublicId = result.public_id;
     }
     await user.save();

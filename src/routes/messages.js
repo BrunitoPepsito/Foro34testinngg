@@ -51,6 +51,8 @@ router.get('/', async (req, res) => {
           displayName: m.author.displayName,
           avatarUrl: m.author.avatarUrl,
           color: m.author.color,
+          decoration: m.author.decoration || 'none',
+          effect: m.author.effect || 'none',
           anonymous: m.author.anonymous,
         },
         room: m.room,
@@ -91,6 +93,8 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
         color: user.color,
+        decoration: user.decoration || 'none',
+        effect: user.effect || 'none',
         anonymous: false,
       };
     } else {
@@ -101,6 +105,8 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
         displayName: makeAnonName(ip),
         avatarUrl: '',
         color: '#9aa0aa',
+        decoration: 'none',
+        effect: 'none',
         anonymous: true,
       };
     }
