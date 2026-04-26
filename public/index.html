@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Foro34 — Chat en tiempo real</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-logo">💬</span>
+          <span class="brand-name">Foro34</span>
+        </div>
+
+        <nav class="nav">
+          <button data-route="/" class="nav-btn active">🏠 Chat global</button>
+          <button data-route="/profile" class="nav-btn js-only-auth">👤 Mi perfil</button>
+        </nav>
+
+        <div class="auth-card">
+          <div class="auth-anon" data-show-when="anon">
+            <p class="muted">Estás como invitado.</p>
+            <div class="row">
+              <button data-route="/login" class="btn btn-primary">Iniciar sesión</button>
+              <button data-route="/register" class="btn">Registrarme</button>
+            </div>
+          </div>
+          <div class="auth-user" data-show-when="auth">
+            <div class="me">
+              <img class="me-avatar" data-bind="me.avatarUrl" alt="" />
+              <div>
+                <div class="me-name" data-bind="me.displayName"></div>
+                <div class="me-handle muted">@<span data-bind="me.username"></span></div>
+              </div>
+            </div>
+            <button id="logoutBtn" class="btn btn-ghost">Cerrar sesión</button>
+          </div>
+        </div>
+
+        <footer class="sidebar-foot muted">
+          Express · MongoDB · Cloudinary · Pusher
+        </footer>
+      </aside>
+
+      <main class="main">
+        <section class="view view-chat" data-view="/">
+          <header class="view-head">
+            <h1>Chat global</h1>
+            <span class="badge" id="rtBadge">conectando…</span>
+          </header>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="composer" class="composer">
+            <label class="upload" title="Adjuntar imagen / GIF">
+              <input type="file" id="imageInput" accept="image/*" hidden />
+              <span>📎</span>
+            </label>
+            <input
+              id="textInput"
+              type="text"
+              placeholder="Escribe un mensaje… (puedes pegar GIFs como imagen)"
+              maxlength="2000"
+              autocomplete="off"
+            />
+            <button type="submit" class="btn btn-primary">Enviar</button>
+          </form>
+          <div id="previewBar" class="preview-bar hidden">
+            <img id="previewImg" alt="preview" />
+            <button type="button" id="clearPreview" class="btn btn-ghost">Quitar</button>
+          </div>
+        </section>
+
+        <section class="view view-login hidden" data-view="/login">
+          <header class="view-head"><h1>Iniciar sesión</h1></header>
+          <form id="loginForm" class="form">
+            <label>Usuario o email<input name="identifier" required autocomplete="username" /></label>
+            <label>Contraseña<input name="password" type="password" required autocomplete="current-password" /></label>
+            <button class="btn btn-primary" type="submit">Entrar</button>
+            <p class="muted">¿No tienes cuenta? <a href="/register" data-route="/register">Crear una</a></p>
+            <p class="form-error" id="loginError"></p>
+          </form>
+        </section>
+
+        <section class="view view-register hidden" data-view="/register">
+          <header class="view-head"><h1>Crear cuenta</h1></header>
+          <form id="registerForm" class="form">
+            <label>Nombre visible<input name="displayName" maxlength="40" required /></label>
+            <label>Usuario (a-z 0-9 _)<input name="username" pattern="[a-z0-9_]{3,24}" required autocomplete="username" /></label>
+            <label>Email<input name="email" type="email" required autocomplete="email" /></label>
+            <label>Contraseña (min 6)<input name="password" type="password" minlength="6" required autocomplete="new-password" /></label>
+            <button class="btn btn-primary" type="submit">Registrarme</button>
+            <p class="muted">¿Ya tienes cuenta? <a href="/login" data-route="/login">Iniciar sesión</a></p>
+            <p class="form-error" id="registerError"></p>
+          </form>
+        </section>
+
+        <section class="view view-profile hidden" data-view="/profile">
+          <div id="profileContainer"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://js.pusher.com/8.4/pusher.min.js"></script>
+    <script src="/js/app.js"></script>
+  </body>
+</html>
