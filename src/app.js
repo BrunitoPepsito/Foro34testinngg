@@ -10,6 +10,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const messageRoutes = require('./routes/messages');
 const configRoutes = require('./routes/config');
+const realtimeRoutes = require('./routes/realtime');
 
 // Asset version used for cache-busting. Computed once per cold start so
 // served HTML always references the current deploy's JS/CSS.
@@ -52,6 +53,7 @@ function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/messages', messageRoutes);
+  app.use('/api/realtime', realtimeRoutes);
 
   const publicDir = path.join(__dirname, '..', 'public');
   const assetVersion = computeAssetVersion(publicDir);

@@ -6,9 +6,17 @@
     config: null,
     pusher: null,
     channel: null,
+    presenceChannel: null,
+    privateChannel: null,
     pendingFile: null,
     room: 'global',
     seen: new Set(),
+    messages: new Map(), // id -> message
+    replyTo: null,       // pending reply target for the composer
+    editing: null,       // pending edit target
+    online: new Map(),   // user_id -> info from presence channel
+    typing: new Map(),   // displayName -> timeout id
+    notifications: [],   // unread + recent
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -62,6 +70,20 @@
     default: 'Aa Default', pixel: 'PIXEL', serif: 'Aa Serif', mono: '> mono',
     cursive: 'Aa Caveat', marker: 'Marker', retro: 'RETRO', fancy: 'Pacifico',
   };
+  const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '🎉', '😮', '😢', '👀'];
+  const COMMANDS = [
+    { name: '/help', hint: 'lista de comandos' },
+    { name: '/me', hint: 'acción en tercera persona' },
+    { name: '/roll', hint: 'tirada de dados (NdS+M)' },
+    { name: '/coin', hint: 'cara o cruz' },
+    { name: '/8ball', hint: 'bola 8 mágica' },
+    { name: '/poll', hint: 'crea encuesta: pregunta | A | B | …' },
+    { name: '/shrug', hint: '¯\\_(ツ)_/¯' },
+    { name: '/tableflip', hint: '(╯°□°）╯︵ ┻━┻' },
+    { name: '/unflip', hint: '┬─┬ ノ( ゜-゜ノ)' },
+    { name: '/lenny', hint: '( ͡° ͜ʖ ͡°)' },
+    { name: '/ping', hint: 'comprueba latencia' },
+  ];
   function decoClass(name) {
     return name && DECORATIONS.includes(name) && name !== 'none' ? `deco-wrap deco-${name}` : '';
   }
@@ -178,41 +200,286 @@
     }
   }
 
+  // Highlight @mentions in already-escaped text. Mentions to *me* get a special class.
+  function renderTextWithMentions(text) {
+    if (!text) return '';
+    const escaped = escapeHTML(text);
+    const myUser = state.me && state.me.username;
+    return escaped.replace(/@([a-z0-9_]{3,24})/gi, (_m, name) => {
+      const lower = name.toLowerCase();
+      const cls = myUser && lower === myUser.toLowerCase() ? 'mention me' : 'mention';
+      return `<a class="${cls}" href="/u/${encodeURIComponent(lower)}" data-username="${escapeHTML(lower)}">@${escapeHTML(name)}</a>`;
+    });
+  }
+
+  function isOwnMessage(m) {
+    if (!m || !m.author) return false;
+    if (state.me) return m.author.userId === state.me.id;
+    // Anonymous: server sends back our hashed anonOwner; client doesn't know it,
+    // so we mark messages we just sent as own via state.ownAnonIds.
+    return !!(m.anonOwner && state.ownAnonIds && state.ownAnonIds.has(m.anonOwner));
+  }
+
+  function renderReactions(m) {
+    if (!m.reactions || m.reactions.length === 0) return '';
+    const myId = state.me ? state.me.id : null;
+    const myAnon = state.myAnonId || '';
+    const chips = m.reactions.map((r) => {
+      const mine = (myId && r.userIds.includes(myId)) || (myAnon && r.anonIds.includes(myAnon));
+      return `<button class="reaction ${mine ? 'mine' : ''}" data-emoji="${escapeHTML(r.emoji)}" type="button"><span>${escapeHTML(r.emoji)}</span><span class="count">${r.count}</span></button>`;
+    }).join('');
+    return `<div class="reactions">${chips}<button class="reaction add" data-add="1" type="button" title="Agregar reacción">+</button></div>`;
+  }
+
+  function renderPoll(m) {
+    if (!m.poll) return '';
+    const total = m.poll.options.reduce((s, o) => s + o.count, 0);
+    const myId = state.me ? state.me.id : null;
+    const myAnon = state.myAnonId || '';
+    const opts = m.poll.options.map((o, i) => {
+      const pct = total ? Math.round((o.count / total) * 100) : 0;
+      const mine = (myId && o.voterIds.includes(myId)) || (myAnon && o.voterAnonIds.includes(myAnon));
+      return `<button class="poll-opt ${mine ? 'mine' : ''}" data-vote="${i}" type="button">
+        <span class="poll-bar" style="width:${pct}%"></span>
+        <span class="poll-text">${escapeHTML(o.text)}</span>
+        <span class="poll-pct">${o.count} · ${pct}%</span>
+      </button>`;
+    }).join('');
+    return `<div class="poll-card">
+      <div class="poll-q">📊 ${escapeHTML(m.poll.question)}</div>
+      <div class="poll-opts">${opts}</div>
+      <div class="poll-meta">${total} voto${total === 1 ? '' : 's'}</div>
+    </div>`;
+  }
+
+  function renderReplyPreview(rt) {
+    if (!rt) return '';
+    const snippet = rt.snippet ? escapeHTML(rt.snippet) : (rt.snippetImage ? '🖼️ imagen' : '');
+    return `<div class="msg-reply-preview" data-jump="${escapeHTML(rt.id || '')}" style="border-color:${escapeHTML(rt.authorColor || '#555')}">
+      <span class="reply-name" style="color:${escapeHTML(rt.authorColor || '#aaa')}">↪ ${escapeHTML(rt.authorDisplayName || '')}</span>
+      <span class="reply-snip">${snippet}</span>
+    </div>`;
+  }
+
   function appendMessage(m, animate = true) {
     if (state.seen.has(m.id)) return;
     state.seen.add(m.id);
+    state.messages.set(m.id, m);
     const list = $('#messages');
     const wrap = document.createElement('div');
-    wrap.className = 'msg';
+    wrap.dataset.msgId = m.id;
+    renderMessageInto(wrap, m);
+    if (animate) wrap.style.animation = 'fadeIn .15s ease';
+    list.appendChild(wrap);
+    scrollToBottom();
+  }
+
+  function updateMessage(m) {
+    state.messages.set(m.id, m);
+    const list = $('#messages');
+    const existing = list.querySelector(`[data-msg-id="${m.id}"]`);
+    if (!existing) return appendMessage(m);
+    renderMessageInto(existing, m);
+  }
+
+  function renderMessageInto(wrap, m) {
     const a = m.author || {};
+    const isAction = !!m.isAction;
+    const isSystem = m.kind === 'system';
+    const isPoll = m.kind === 'poll';
+    const isDeleted = !!m.deletedAt;
+    const isMine = isOwnMessage(m);
+    wrap.className = 'msg' + (isAction ? ' is-action' : '') + (isSystem ? ' is-system' : '') + (isMine ? ' is-mine' : '');
     const avatar = a.avatarUrl
       ? `<img src="${escapeHTML(a.avatarUrl)}" alt="" />`
-      : escapeHTML((a.displayName || '?').charAt(0).toUpperCase());
+      : (a.bot ? '🤖' : escapeHTML((a.displayName || '?').charAt(0).toUpperCase()));
     const nameClass = `${a.anonymous ? 'msg-name anon' : 'msg-name clickable'} ${fontClass(a.nameFont)}`;
     const nameAttrs = a.anonymous ? '' : `data-username="${escapeHTML(a.username || '')}"`;
-    const imageHtml = m.imageUrl
-      ? `<img class="msg-image" src="${escapeHTML(m.imageUrl)}" alt="image" />`
-      : '';
     const dClass = decoClass(a.decoration);
+    const botBadge = a.bot ? '<span class="bot-badge">BOT</span>' : '';
+    const editedBadge = m.editedAt ? '<span class="edited-badge" title="editado">(editado)</span>' : '';
+    const replyHtml = renderReplyPreview(m.replyTo);
+    let body;
+    if (isDeleted) {
+      body = '<div class="msg-text deleted">— mensaje eliminado —</div>';
+    } else if (isPoll) {
+      body = renderPoll(m);
+    } else {
+      const txt = m.text ? `<div class="msg-text${isAction ? ' action' : ''}">${renderTextWithMentions(m.text)}</div>` : '';
+      const img = m.imageUrl ? `<img class="msg-image" src="${escapeHTML(m.imageUrl)}" alt="image" />` : '';
+      body = `${replyHtml}${txt}${img}${renderReactions(m)}`;
+    }
+    const actions = isDeleted ? '' : `
+      <div class="msg-actions">
+        <button class="msg-act" data-act="react" title="Reaccionar">😊</button>
+        <button class="msg-act" data-act="reply" title="Responder">↪</button>
+        ${isMine && !isSystem && !isPoll ? '<button class="msg-act" data-act="edit" title="Editar">✏️</button>' : ''}
+        ${isMine ? '<button class="msg-act" data-act="delete" title="Borrar">🗑️</button>' : ''}
+        ${state.me && !isMine ? '<button class="msg-act" data-act="pin" title="Pinear en mi perfil">📌</button>' : ''}
+      </div>`;
     wrap.innerHTML = `
       <div class="msg-avatar ${dClass}" style="background:${escapeHTML(a.color || '#7c5cff')}">${avatar}</div>
       <div class="msg-body">
         <div class="msg-head">
           <span class="${nameClass}" ${nameAttrs} style="color:${escapeHTML(a.color || '#fff')}">${escapeHTML(a.displayName || 'Anon')}</span>
+          ${botBadge}
           <span class="msg-time">${fmtTime(m.createdAt)}</span>
+          ${editedBadge}
         </div>
-        ${m.text ? `<div class="msg-text">${escapeHTML(m.text)}</div>` : ''}
-        ${imageHtml}
-      </div>`;
+        ${body}
+      </div>
+      ${actions}`;
+    bindMessageEvents(wrap, m);
+  }
+
+  function bindMessageEvents(wrap, m) {
+    const a = m.author || {};
     if (!a.anonymous && a.username) {
-      wrap.querySelector('.msg-name').addEventListener('click', () => go(`/u/${a.username}`));
+      const nameEl = wrap.querySelector('.msg-name');
+      if (nameEl) nameEl.addEventListener('click', () => go(`/u/${a.username}`));
     }
-    if (m.imageUrl) {
-      wrap.querySelector('.msg-image').addEventListener('click', () => window.open(m.imageUrl, '_blank'));
+    const img = wrap.querySelector('.msg-image');
+    if (img) img.addEventListener('click', () => window.open(m.imageUrl, '_blank'));
+    wrap.querySelectorAll('.mention').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const u = el.dataset.username;
+        if (u) go(`/u/${u}`);
+      });
+    });
+    wrap.querySelectorAll('.reaction').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.add) openReactionPicker(m.id, btn);
+        else toggleReaction(m.id, btn.dataset.emoji);
+      });
+    });
+    wrap.querySelectorAll('.poll-opt').forEach((btn) => {
+      btn.addEventListener('click', () => votePoll(m.id, parseInt(btn.dataset.vote, 10)));
+    });
+    wrap.querySelectorAll('.msg-act').forEach((btn) => {
+      const act = btn.dataset.act;
+      btn.addEventListener('click', () => {
+        if (act === 'react') openReactionPicker(m.id, btn);
+        else if (act === 'reply') startReply(m);
+        else if (act === 'edit') startEdit(m);
+        else if (act === 'delete') deleteMessage(m.id);
+        else if (act === 'pin') pinMessage(m.id);
+      });
+    });
+    const replyJump = wrap.querySelector('.msg-reply-preview');
+    if (replyJump && replyJump.dataset.jump) {
+      replyJump.addEventListener('click', () => {
+        const target = $(`[data-msg-id="${replyJump.dataset.jump}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('flash');
+          setTimeout(() => target.classList.remove('flash'), 1200);
+        }
+      });
     }
-    if (animate) wrap.style.animation = 'fadeIn .15s ease';
-    list.appendChild(wrap);
-    scrollToBottom();
+  }
+
+  async function toggleReaction(msgId, emoji) {
+    try {
+      const data = await api(`/api/messages/${msgId}/reactions`, { method: 'POST', body: { emoji } });
+      if (data && data.message) updateMessage(data.message);
+    } catch (err) { console.warn('react', err); }
+  }
+
+  function openReactionPicker(msgId, anchorBtn) {
+    closeReactionPicker();
+    const picker = document.createElement('div');
+    picker.className = 'reaction-picker';
+    picker.innerHTML = QUICK_REACTIONS.map((e) => `<button type="button" data-e="${escapeHTML(e)}">${escapeHTML(e)}</button>`).join('') +
+      '<input type="text" class="emoji-input" placeholder="otro" maxlength="4" />';
+    document.body.appendChild(picker);
+    const r = anchorBtn.getBoundingClientRect();
+    picker.style.top = `${r.top + window.scrollY - picker.offsetHeight - 4}px`;
+    picker.style.left = `${Math.min(window.innerWidth - 220, r.left)}px`;
+    picker.querySelectorAll('button').forEach((b) => {
+      b.addEventListener('click', () => { toggleReaction(msgId, b.dataset.e); closeReactionPicker(); });
+    });
+    const inp = picker.querySelector('.emoji-input');
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && inp.value.trim()) {
+        toggleReaction(msgId, inp.value.trim());
+        closeReactionPicker();
+      }
+    });
+    setTimeout(() => document.addEventListener('click', closeReactionPickerOutside, { once: true }), 0);
+    state._reactionPicker = picker;
+  }
+  function closeReactionPicker() {
+    if (state._reactionPicker) { state._reactionPicker.remove(); state._reactionPicker = null; }
+  }
+  function closeReactionPickerOutside(e) {
+    if (!state._reactionPicker) return;
+    if (!state._reactionPicker.contains(e.target)) closeReactionPicker();
+    else setTimeout(() => document.addEventListener('click', closeReactionPickerOutside, { once: true }), 0);
+  }
+
+  async function votePoll(msgId, optionIndex) {
+    try {
+      const data = await api(`/api/messages/${msgId}/poll/vote`, { method: 'POST', body: { optionIndex } });
+      if (data && data.message) updateMessage(data.message);
+    } catch (err) { console.warn('vote', err); }
+  }
+
+  async function deleteMessage(msgId) {
+    if (!confirm('¿Borrar este mensaje?')) return;
+    try {
+      const data = await api(`/api/messages/${msgId}`, { method: 'DELETE' });
+      if (data && data.message) updateMessage(data.message);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  function startReply(m) {
+    state.replyTo = m;
+    state.editing = null;
+    showComposerBanner();
+    $('#textInput').focus();
+  }
+  function startEdit(m) {
+    state.editing = m;
+    state.replyTo = null;
+    $('#textInput').value = m.text || '';
+    showComposerBanner();
+    $('#textInput').focus();
+  }
+  function cancelComposerMode() {
+    state.replyTo = null;
+    state.editing = null;
+    showComposerBanner();
+    if (state._editOriginalText !== undefined) {
+      $('#textInput').value = '';
+      state._editOriginalText = undefined;
+    }
+  }
+  function showComposerBanner() {
+    const banner = $('#composerBanner');
+    if (!banner) return;
+    if (state.editing) {
+      banner.innerHTML = `<span>Editando mensaje · </span><button type="button" id="cancelMode">cancelar</button>`;
+      banner.classList.remove('hidden');
+    } else if (state.replyTo) {
+      const rt = state.replyTo;
+      const snip = (rt.text || '').slice(0, 80) || (rt.imageUrl ? '🖼️ imagen' : '');
+      banner.innerHTML = `<span>Respondiendo a <b style="color:${escapeHTML(rt.author.color || '#fff')}">${escapeHTML(rt.author.displayName)}</b>: ${escapeHTML(snip)}</span><button type="button" id="cancelMode">×</button>`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.innerHTML = '';
+      banner.classList.add('hidden');
+    }
+    const c = $('#cancelMode');
+    if (c) c.addEventListener('click', cancelComposerMode);
+  }
+
+  async function pinMessage(msgId) {
+    if (!state.me) { alert('Inicia sesión para pinear.'); return; }
+    try {
+      const r = await api(`/api/messages/${msgId}/pin`, { method: 'POST' });
+      alert(`Pineado (${r.pinnedMessageIds.length}/5). Aparece en tu perfil.`);
+    } catch (err) { alert('Error: ' + err.message); }
   }
 
   function scrollToBottom() {
@@ -225,12 +492,16 @@
     if (!state.config || !state.config.pusher || !state.config.pusher.enabled) {
       badge.textContent = 'tiempo real desactivado';
       badge.className = 'badge error';
-      // Fallback: poll every 3s
       setInterval(loadMessages, 3000);
       return;
     }
     try {
-      const p = new Pusher(state.config.pusher.key, { cluster: state.config.pusher.cluster, forceTLS: true });
+      const p = new Pusher(state.config.pusher.key, {
+        cluster: state.config.pusher.cluster,
+        forceTLS: true,
+        authEndpoint: '/api/realtime/auth',
+        auth: { headers: {} },
+      });
       state.pusher = p;
       const channel = p.subscribe(`room-${state.room}`);
       state.channel = channel;
@@ -238,12 +509,138 @@
       p.connection.bind('error', () => { badge.textContent = 'sin conexión'; badge.className = 'badge error'; });
       p.connection.bind('disconnected', () => { badge.textContent = 'desconectado'; badge.className = 'badge error'; });
       channel.bind('message:new', (msg) => appendMessage(msg));
+      channel.bind('message:update', (msg) => updateMessage(msg));
+
+      // Presence: who's online + typing indicator (client events).
+      const pres = p.subscribe(`presence-room-${state.room}`);
+      state.presenceChannel = pres;
+      pres.bind('pusher:subscription_succeeded', (members) => {
+        state.online.clear();
+        members.each((m) => state.online.set(m.id, m.info));
+        renderOnlineList();
+      });
+      pres.bind('pusher:member_added', (m) => { state.online.set(m.id, m.info); renderOnlineList(); });
+      pres.bind('pusher:member_removed', (m) => { state.online.delete(m.id); renderOnlineList(); });
+      pres.bind('client-typing', (data) => showTyping(data && data.displayName));
+
+      // Personal channel for private notifications (mentions, etc.)
+      if (state.me) {
+        try {
+          const priv = p.subscribe(`private-user-${state.me.id}`);
+          state.privateChannel = priv;
+          priv.bind('notification:new', (n) => addNotification(n));
+        } catch (e) { console.warn('subscribe private', e); }
+      }
     } catch (err) {
       console.error('pusher init', err);
       badge.textContent = 'sin tiempo real';
       badge.className = 'badge error';
       setInterval(loadMessages, 3000);
     }
+  }
+
+  function renderOnlineList() {
+    const el = $('#onlineList');
+    if (!el) return;
+    const items = [...state.online.values()];
+    el.innerHTML = `<div class="online-count">🟢 ${items.length} en línea</div>` +
+      items.slice(0, 50).map((u) => `<div class="online-row ${u.username ? 'clickable' : ''}" data-username="${escapeHTML(u.username || '')}">
+        <span class="online-dot" style="background:${escapeHTML(u.color || '#7c5cff')}"></span>
+        <span class="online-name ${decoClass(u.decoration)}">${escapeHTML(u.displayName)}</span>
+      </div>`).join('');
+    el.querySelectorAll('.online-row.clickable').forEach((r) => {
+      r.addEventListener('click', () => { const u = r.dataset.username; if (u) go(`/u/${u}`); });
+    });
+  }
+
+  function showTyping(name) {
+    if (!name) return;
+    const el = $('#typingIndicator');
+    if (!el) return;
+    if (state.typing.has(name)) clearTimeout(state.typing.get(name));
+    state.typing.set(name, setTimeout(() => { state.typing.delete(name); paintTyping(); }, 4000));
+    paintTyping();
+  }
+  function paintTyping() {
+    const el = $('#typingIndicator');
+    if (!el) return;
+    const names = [...state.typing.keys()];
+    if (!names.length) { el.classList.add('hidden'); el.textContent = ''; return; }
+    const phrase = names.length === 1 ? `${names[0]} está escribiendo…`
+      : names.length === 2 ? `${names[0]} y ${names[1]} están escribiendo…`
+      : `${names.length} personas están escribiendo…`;
+    el.textContent = phrase;
+    el.classList.remove('hidden');
+  }
+
+  function broadcastTyping() {
+    const ch = state.presenceChannel;
+    if (!ch || !ch.subscribed) return;
+    const me = state.me ? state.me.displayName : null;
+    const fallback = state.online.values().next().value; // gives any (own) info if anon
+    const dn = me || (fallback && fallback.displayName) || 'Anon';
+    try { ch.trigger('client-typing', { displayName: dn }); } catch (_e) { /* throttled */ }
+  }
+
+  // ----- Notifications dropdown -----
+  function addNotification(n) {
+    state.notifications.unshift(n);
+    if (state.notifications.length > 50) state.notifications.length = 50;
+    paintNotifBadge();
+    flashToast(`@${n.fromDisplayName}: ${n.text || ''}`);
+  }
+  function paintNotifBadge() {
+    const btn = $('#notifBtn');
+    if (!btn) return;
+    const unread = state.notifications.filter((n) => !n.read).length;
+    btn.dataset.count = unread;
+    btn.classList.toggle('has-unread', unread > 0);
+    const dot = btn.querySelector('.notif-count');
+    if (dot) dot.textContent = unread > 0 ? unread : '';
+  }
+  async function loadNotifications() {
+    if (!state.me) return;
+    try {
+      const r = await api('/api/users/me/notifications');
+      state.notifications = r.notifications || [];
+      paintNotifBadge();
+    } catch (_e) { /* ignore */ }
+  }
+  function toggleNotifPanel() {
+    let panel = $('#notifPanel');
+    if (panel) { panel.remove(); return; }
+    panel = document.createElement('div');
+    panel.id = 'notifPanel';
+    panel.className = 'notif-panel';
+    if (state.notifications.length === 0) {
+      panel.innerHTML = '<div class="muted" style="padding:14px">Sin notificaciones</div>';
+    } else {
+      panel.innerHTML = state.notifications.slice(0, 30).map((n) => `
+        <div class="notif-row ${n.read ? '' : 'unread'}">
+          <b>@${escapeHTML(n.fromDisplayName)}</b>
+          <div class="notif-text">${escapeHTML(n.text || '')}</div>
+          <span class="muted">${fmtTime(n.createdAt)}</span>
+        </div>`).join('');
+    }
+    document.body.appendChild(panel);
+    api('/api/users/me/notifications/read', { method: 'POST' }).catch(() => {});
+    state.notifications.forEach((n) => { n.read = true; });
+    paintNotifBadge();
+    setTimeout(() => document.addEventListener('click', closeNotifOutside, { once: true }), 0);
+  }
+  function closeNotifOutside(e) {
+    const p = $('#notifPanel');
+    if (!p) return;
+    if (!p.contains(e.target) && e.target.id !== 'notifBtn' && !$('#notifBtn').contains(e.target)) p.remove();
+    else setTimeout(() => document.addEventListener('click', closeNotifOutside, { once: true }), 0);
+  }
+  function flashToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.classList.add('show'), 10);
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 250); }, 3000);
   }
 
   function setupComposer() {
@@ -267,7 +664,6 @@
       previewBar.classList.add('hidden');
     });
 
-    // Paste images directly
     text.addEventListener('paste', (e) => {
       const items = (e.clipboardData || {}).items || [];
       for (const it of items) {
@@ -282,28 +678,131 @@
       }
     });
 
+    // Throttled typing event + command autocomplete + mention autocomplete.
+    let typingThrottle = 0;
+    text.addEventListener('input', () => {
+      const now = Date.now();
+      if (now - typingThrottle > 2000) { typingThrottle = now; broadcastTyping(); }
+      maybeShowAutocomplete(text);
+    });
+    text.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') cancelComposerMode();
+      handleAutocompleteKeys(e, text);
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      hideAutocomplete();
       const value = text.value.trim();
-      if (!value && !state.pendingFile) return;
+      if (!value && !state.pendingFile && !state.editing) return;
+
+      // Edit mode: PATCH the message.
+      if (state.editing) {
+        const targetId = state.editing.id;
+        try {
+          const data = await api(`/api/messages/${targetId}`, { method: 'PATCH', body: { text: value } });
+          if (data && data.message) updateMessage(data.message);
+          state.editing = null;
+          text.value = '';
+          showComposerBanner();
+        } catch (err) { alert('Error: ' + err.message); }
+        return;
+      }
+
       const fd = new FormData();
       if (value) fd.append('text', value);
       if (state.pendingFile) fd.append('image', state.pendingFile);
       fd.append('room', state.room);
+      if (state.replyTo) fd.append('replyToId', state.replyTo.id);
       try {
         text.value = '';
-        const file = state.pendingFile;
         state.pendingFile = null;
         fileInput.value = '';
         previewBar.classList.add('hidden');
+        state.replyTo = null;
+        showComposerBanner();
         const data = await api('/api/messages', { method: 'POST', body: fd });
-        // Render own message immediately. state.seen dedupes when Pusher echoes back.
         if (data && data.message) appendMessage(data.message);
+        if (data && data.botReply) appendMessage(data.botReply);
+        // Track our own anon owner for self-recognition (own-message styling).
+        if (data && data.message && data.message.anonOwner) {
+          state.myAnonId = data.message.anonOwner;
+          state.ownAnonIds = state.ownAnonIds || new Set();
+          state.ownAnonIds.add(data.message.anonOwner);
+        }
       } catch (err) {
         console.error('send', err);
         alert('No se pudo enviar: ' + err.message);
       }
     });
+  }
+
+  // ----- Autocomplete (slash commands + @mentions) -----
+  let acState = { open: false, kind: null, items: [], cursor: 0, range: null };
+  function maybeShowAutocomplete(textEl) {
+    const v = textEl.value;
+    const pos = textEl.selectionStart || v.length;
+    // Slash command at start of line or whole input.
+    if (v.startsWith('/') && !v.includes(' ')) {
+      const term = v.slice(1).toLowerCase();
+      const items = COMMANDS.filter((c) => c.name.slice(1).startsWith(term));
+      if (!items.length) return hideAutocomplete();
+      return showAutocomplete('cmd', items, { start: 0, end: v.length });
+    }
+    // @mention from online list.
+    const upTo = v.slice(0, pos);
+    const m = upTo.match(/(^|\s)@([a-z0-9_]{0,24})$/i);
+    if (m) {
+      const term = m[2].toLowerCase();
+      const items = [...state.online.values()]
+        .filter((u) => u.username && u.username.startsWith(term))
+        .slice(0, 8)
+        .map((u) => ({ name: '@' + u.username, hint: u.displayName }));
+      if (!items.length) return hideAutocomplete();
+      return showAutocomplete('mention', items, { start: pos - m[2].length - 1, end: pos });
+    }
+    hideAutocomplete();
+  }
+  function showAutocomplete(kind, items, range) {
+    let el = $('#autocomplete');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'autocomplete';
+      el.className = 'autocomplete';
+      $('#composerWrap').appendChild(el);
+    }
+    acState = { open: true, kind, items, cursor: 0, range };
+    paintAutocomplete();
+  }
+  function paintAutocomplete() {
+    const el = $('#autocomplete');
+    if (!el) return;
+    el.innerHTML = acState.items.map((it, i) => `<div class="ac-row ${i === acState.cursor ? 'active' : ''}" data-i="${i}"><b>${escapeHTML(it.name)}</b><span class="muted">${escapeHTML(it.hint || '')}</span></div>`).join('');
+    el.querySelectorAll('.ac-row').forEach((row) => {
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); acceptAutocomplete(parseInt(row.dataset.i, 10)); });
+    });
+  }
+  function hideAutocomplete() { acState.open = false; const el = $('#autocomplete'); if (el) el.remove(); }
+  function handleAutocompleteKeys(e, _textEl) {
+    if (!acState.open) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); acState.cursor = (acState.cursor + 1) % acState.items.length; paintAutocomplete(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); acState.cursor = (acState.cursor - 1 + acState.items.length) % acState.items.length; paintAutocomplete(); }
+    else if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); acceptAutocomplete(acState.cursor); }
+    else if (e.key === 'Escape') { e.preventDefault(); hideAutocomplete(); }
+  }
+  function acceptAutocomplete(i) {
+    const it = acState.items[i];
+    if (!it) return;
+    const textEl = $('#textInput');
+    const v = textEl.value;
+    const before = v.slice(0, acState.range.start);
+    const after = v.slice(acState.range.end);
+    const insert = it.name + ' ';
+    textEl.value = before + insert + after;
+    const pos = before.length + insert.length;
+    textEl.setSelectionRange(pos, pos);
+    hideAutocomplete();
+    textEl.focus();
   }
 
   // ----- Login / Register -----
@@ -712,6 +1211,17 @@
 
     applyAuthUI();
     render();
+
+    // Notifications + side panels.
+    const notifBtn = $('#notifBtn');
+    if (notifBtn) notifBtn.addEventListener('click', toggleNotifPanel);
+    const onlineToggle = $('#onlineToggle');
+    if (onlineToggle) {
+      onlineToggle.addEventListener('click', () => {
+        const p = $('#onlinePanel'); if (p) p.classList.toggle('open');
+      });
+    }
+    if (state.me) loadNotifications().catch(() => {});
   }
 
   boot();

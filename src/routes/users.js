@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const User = require('../models/User');
+const Message = require('../models/Message');
 const { connectDB } = require('../lib/db');
 const { authRequired } = require('../lib/auth');
 const { uploadBuffer, getCloudinary } = require('../lib/cloudinary');
@@ -122,5 +123,62 @@ router.post('/me/avatar', authRequired, upload.single('file'), (req, res) =>
 router.post('/me/banner', authRequired, upload.single('file'), (req, res) =>
   handleMediaUpload(req, res, 'banner'),
 );
+
+// List the current user's notifications (mentions + system).
+router.get('/me/notifications', authRequired, async (req, res) => {
+  try {
+    await connectDB();
+    const u = await User.findById(req.user.id).lean();
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    const notes = (u.notifications || []).map((n) => ({
+      id: n._id ? n._id.toString() : '',
+      type: n.type,
+      msgId: n.msgId ? n.msgId.toString() : null,
+      fromUsername: n.fromUsername,
+      fromDisplayName: n.fromDisplayName,
+      text: n.text,
+      room: n.room,
+      read: n.read,
+      createdAt: n.createdAt,
+    }));
+    res.json({ notifications: notes });
+  } catch (err) {
+    console.error('list notifs failed', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/me/notifications/read', authRequired, async (req, res) => {
+  try {
+    await connectDB();
+    const u = await User.findById(req.user.id);
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    (u.notifications || []).forEach((n) => { n.read = true; });
+    u.markModified('notifications');
+    await u.save();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('mark read failed', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// Public list of pinned messages for a profile.
+router.get('/:username/pinned', async (req, res) => {
+  try {
+    await connectDB();
+    const u = await User.findOne({ username: String(req.params.username).toLowerCase() }).lean();
+    if (!u) return res.status(404).json({ error: 'Not found' });
+    const ids = (u.pinnedMessageIds || []).map((id) => id.toString());
+    if (ids.length === 0) return res.json({ messages: [] });
+    const msgs = await Message.find({ _id: { $in: ids } });
+    // Preserve user pinning order.
+    const ordered = ids.map((id) => msgs.find((m) => m._id.toString() === id)).filter(Boolean);
+    res.json({ messages: ordered.map((m) => m.toClientJSON()) });
+  } catch (err) {
+    console.error('list pinned failed', err);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
 
 module.exports = router;

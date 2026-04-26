@@ -14,6 +14,20 @@ const NAME_FONTS = [
   'default', 'pixel', 'serif', 'mono', 'cursive', 'marker', 'retro', 'fancy',
 ];
 
+const NotificationSchema = new mongoose.Schema(
+  {
+    type: { type: String, default: 'mention' }, // mention | system
+    msgId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    fromUsername: { type: String, default: '' },
+    fromDisplayName: { type: String, default: '' },
+    text: { type: String, default: '', maxlength: 200 },
+    room: { type: String, default: 'global' },
+    read: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true },
+);
+
 const LinkSchema = new mongoose.Schema(
   {
     label: { type: String, maxlength: 30, default: '' },
@@ -58,6 +72,9 @@ const UserSchema = new mongoose.Schema(
     nameFont: { type: String, enum: NAME_FONTS, default: 'default' },
 
     links: { type: [LinkSchema], default: [] },
+
+    pinnedMessageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
+    notifications: { type: [NotificationSchema], default: [] },
   },
   { timestamps: true },
 );
@@ -81,6 +98,7 @@ UserSchema.methods.toPublicJSON = function () {
     title: this.title,
     nameFont: this.nameFont || 'default',
     links: (this.links || []).map((l) => ({ label: l.label || '', url: l.url || '' })),
+    pinnedMessageIds: (this.pinnedMessageIds || []).map((id) => id.toString()),
     createdAt: this.createdAt,
   };
 };

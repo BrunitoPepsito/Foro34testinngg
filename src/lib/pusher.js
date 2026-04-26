@@ -30,4 +30,15 @@ async function broadcast(channel, event, data) {
   }
 }
 
-module.exports = { getPusher, broadcast };
+// Authorize a private/presence channel subscription. Throws if Pusher
+// is not configured.
+function authorizeChannel({ socketId, channel, presenceData }) {
+  const p = getPusher();
+  if (!p) return null;
+  if (channel.startsWith('presence-')) {
+    return p.authorizeChannel(socketId, channel, presenceData);
+  }
+  return p.authorizeChannel(socketId, channel);
+}
+
+module.exports = { getPusher, broadcast, authorizeChannel };

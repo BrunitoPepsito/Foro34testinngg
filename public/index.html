@@ -53,25 +53,38 @@
           <header class="view-head">
             <h1>Chat global</h1>
             <span class="badge" id="rtBadge">conectando…</span>
+            <button id="notifBtn" class="icon-btn js-only-auth" title="Notificaciones">🔔<span class="notif-count"></span></button>
+            <button id="onlineToggle" class="icon-btn" title="Quién está conectado">👥</button>
           </header>
-          <div id="messages" class="messages" aria-live="polite"></div>
-          <form id="composer" class="composer">
-            <label class="upload" title="Adjuntar imagen / GIF">
-              <input type="file" id="imageInput" accept="image/*" class="file-input" />
-              <span>📎</span>
-            </label>
-            <input
-              id="textInput"
-              type="text"
-              placeholder="Escribe un mensaje… (puedes pegar GIFs como imagen)"
-              maxlength="2000"
-              autocomplete="off"
-            />
-            <button type="submit" class="btn btn-primary">Enviar</button>
-          </form>
-          <div id="previewBar" class="preview-bar hidden">
-            <img id="previewImg" alt="preview" />
-            <button type="button" id="clearPreview" class="btn btn-ghost">Quitar</button>
+          <div class="chat-grid">
+            <div class="chat-main">
+              <div id="messages" class="messages" aria-live="polite"></div>
+              <div id="typingIndicator" class="typing-indicator hidden"></div>
+              <div id="composerWrap" class="composer-wrap">
+                <div id="composerBanner" class="composer-banner hidden"></div>
+                <form id="composer" class="composer">
+                  <label class="upload" title="Adjuntar imagen / GIF">
+                    <input type="file" id="imageInput" accept="image/*" class="file-input" />
+                    <span>📎</span>
+                  </label>
+                  <input
+                    id="textInput"
+                    type="text"
+                    placeholder="Escribe un mensaje… (probá /help o @alguien)"
+                    maxlength="2000"
+                    autocomplete="off"
+                  />
+                  <button type="submit" class="btn btn-primary">Enviar</button>
+                </form>
+                <div id="previewBar" class="preview-bar hidden">
+                  <img id="previewImg" alt="preview" />
+                  <button type="button" id="clearPreview" class="btn btn-ghost">Quitar</button>
+                </div>
+              </div>
+            </div>
+            <aside id="onlinePanel" class="online-panel">
+              <div id="onlineList" class="online-list"><div class="online-count">…</div></div>
+            </aside>
           </div>
         </section>
 
