@@ -235,11 +235,9 @@
         state.pendingFile = null;
         fileInput.value = '';
         previewBar.classList.add('hidden');
-        await api('/api/messages', { method: 'POST', body: fd });
-        // optimistic display: actual message will arrive via Pusher
-        if (!state.pusher && file) {
-          // file not echoed locally for simplicity
-        }
+        const data = await api('/api/messages', { method: 'POST', body: fd });
+        // Render own message immediately. state.seen dedupes when Pusher echoes back.
+        if (data && data.message) appendMessage(data.message);
       } catch (err) {
         console.error('send', err);
         alert('No se pudo enviar: ' + err.message);
