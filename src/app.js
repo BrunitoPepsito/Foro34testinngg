@@ -24,7 +24,7 @@ function createApp() {
       ok: true,
       hasMongo: Boolean(process.env.MONGODB_URI),
       hasCloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME),
-      hasPusher: Boolean(process.env.PUSHER_KEY),
+      hasPusher: Boolean(process.env.PUSHER_APP_ID && process.env.PUSHER_KEY && process.env.PUSHER_SECRET && process.env.PUSHER_CLUSTER),
     });
   });
 
