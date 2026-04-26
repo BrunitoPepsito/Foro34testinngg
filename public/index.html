@@ -12,6 +12,11 @@
   </head>
   <body>
     <div id="app">
+      <aside id="serverRail" class="server-rail js-only-auth">
+        <button class="server-icon active" data-server="global" title="Chat global">🏠</button>
+        <div id="serverList" class="server-list"></div>
+        <button id="newServerBtn" class="server-icon add" title="Crear / unirse a un server">+</button>
+      </aside>
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-logo">💬</span>
@@ -22,6 +27,18 @@
           <button data-route="/" class="nav-btn active">🏠 Chat global</button>
           <button data-route="/profile" class="nav-btn js-only-auth">👤 Mi perfil</button>
         </nav>
+
+        <div id="channelList" class="channel-list hidden">
+          <div class="channel-list-head">
+            <span id="activeServerName">Server</span>
+            <button id="newChannelBtn" class="icon-btn" title="Nuevo canal">+</button>
+          </div>
+          <div id="channels"></div>
+          <div class="channel-list-foot">
+            <code id="inviteCode" title="Click para copiar"></code>
+            <button id="leaveServerBtn" class="btn btn-ghost">Salir</button>
+          </div>
+        </div>
 
         <div class="auth-card">
           <div class="auth-anon" data-show-when="anon">

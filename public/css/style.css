@@ -32,9 +32,97 @@ a:hover { text-decoration: underline; }
 
 #app {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 64px 280px minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
+}
+#app:has(.server-rail.hidden) { grid-template-columns: 280px minmax(0, 1fr); }
+.server-rail {
+  background: #060709;
+  border-right: 1px solid var(--border);
+  padding: 12px 8px;
+  display: flex; flex-direction: column; gap: 8px; align-items: center;
+  overflow-y: auto;
+}
+.server-icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-2);
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  transition: border-radius .15s ease, background .15s ease;
+  flex-shrink: 0;
+}
+.server-icon::before {
+  content: ''; position: absolute; left: -8px; top: 50%;
+  width: 4px; height: 20px;
+  background: white;
+  border-radius: 0 2px 2px 0;
+  transform: translateY(-50%) scaleY(0);
+  transition: transform .15s ease;
+}
+.server-icon.active::before { transform: translateY(-50%) scaleY(1); }
+.server-icon.active, .server-icon:hover {
+  border-radius: 16px;
+  background: var(--primary);
+}
+.server-icon.add {
+  background: var(--bg-3);
+  color: var(--success);
+}
+.server-list { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+
+.channel-list {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 13px;
+}
+.channel-list-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.channel-list-head .icon-btn { padding: 0 8px; line-height: 22px; }
+.channel-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.channel-row:hover { background: var(--bg-2); color: var(--text); }
+.channel-row.active { background: var(--primary); color: white; }
+.channel-row .hash { color: var(--muted); }
+.channel-row.active .hash { color: white; }
+.channel-list-foot {
+  display: flex; gap: 6px; align-items: center; justify-content: space-between;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+}
+.channel-list-foot code {
+  font-size: 11px; color: var(--muted);
+  background: var(--bg-2);
+  padding: 2px 6px; border-radius: 4px;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  #app { grid-template-columns: minmax(0, 1fr) !important; }
+  .server-rail {
+    flex-direction: row; height: 56px; width: 100%;
+    border-right: none; border-bottom: 1px solid var(--border);
+    padding: 8px;
+  }
+  .server-icon { width: 40px; height: 40px; font-size: 18px; }
+  .server-icon::before { display: none; }
+  .channel-list { display: none; }
 }
 
 .sidebar {
@@ -1088,3 +1176,32 @@ a:hover { text-decoration: underline; }
   content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
   width: 2px; background: var(--primary); border-radius: 2px;
 }
+
+/* Pinned messages section in profile */
+.profile-pins {
+  padding: 16px 32px;
+  margin-top: 12px;
+}
+.profile-pins h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--text);
+}
+.pin-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.pin-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pin-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: white;
+  flex-shrink: 0;
+  position: relative;
+}
+.pin-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.pin-img { max-width: 240px; max-height: 240px; border-radius: 8px; margin-top: 6px; }

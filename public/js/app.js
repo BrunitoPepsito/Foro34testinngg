@@ -11,12 +11,15 @@
     pendingFile: null,
     room: 'global',
     seen: new Set(),
-    messages: new Map(), // id -> message
-    replyTo: null,       // pending reply target for the composer
-    editing: null,       // pending edit target
-    online: new Map(),   // user_id -> info from presence channel
-    typing: new Map(),   // displayName -> timeout id
-    notifications: [],   // unread + recent
+    messages: new Map(),
+    replyTo: null,
+    editing: null,
+    online: new Map(),
+    typing: new Map(),
+    notifications: [],
+    servers: [],          // user's servers
+    activeServer: null,   // server object, null = global
+    activeChannel: null,  // channel id within active server
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -187,7 +190,7 @@
 
   async function loadMessages() {
     try {
-      const data = await api('/api/messages?limit=50');
+      const data = await api(`/api/messages?limit=50&room=${encodeURIComponent(state.room)}`);
       const list = $('#messages');
       list.innerHTML = '';
       state.seen.clear();
@@ -819,6 +822,8 @@
         });
         state.me = data.user;
         applyAuthUI();
+        loadNotifications().catch(() => {});
+        loadServers().catch(() => {});
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -842,6 +847,8 @@
         });
         state.me = data.user;
         applyAuthUI();
+        loadNotifications().catch(() => {});
+        loadServers().catch(() => {});
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -851,6 +858,11 @@
     $('#logoutBtn').addEventListener('click', async () => {
       try { await api('/api/auth/logout', { method: 'POST' }); } catch (_e) { /* ignore */ }
       state.me = null;
+      state.servers = [];
+      state.activeServer = null;
+      state.activeChannel = null;
+      renderServerRail();
+      renderChannelList();
       applyAuthUI();
       go('/');
     });
@@ -930,10 +942,36 @@
         </div>` : ''}
         <div class="profile-bio">${bioHtml}</div>
         ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
+        <div id="pinnedSection" class="profile-pins"><h3>📌 Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
         ${isMe ? renderEditor(user) : ''}
       </div>`;
 
+    loadPinnedMessages(user.username).catch(() => {});
     if (isMe) wireEditor(user);
+  }
+
+  async function loadPinnedMessages(username) {
+    const el = $('#pinnedMessages');
+    if (!el) return;
+    try {
+      const r = await api(`/api/users/${encodeURIComponent(username)}/pinned`);
+      const msgs = r.messages || [];
+      if (!msgs.length) { el.innerHTML = '<div class="muted">Todav\u00eda no hay mensajes pineados.</div>'; return; }
+      el.innerHTML = msgs.map((m) => {
+        const a = m.author || {};
+        const av = a.avatarUrl ? `<img src="${escapeHTML(a.avatarUrl)}" />` : escapeHTML((a.displayName || '?').charAt(0).toUpperCase());
+        const txt = m.text ? `<div>${renderTextWithMentions(m.text)}</div>` : '';
+        const img = m.imageUrl ? `<img class="pin-img" src="${escapeHTML(m.imageUrl)}" />` : '';
+        return `<div class="pin-card">
+          <div class="pin-head">
+            <div class="pin-avatar ${decoClass(a.decoration)}" style="background:${escapeHTML(a.color || '#7c5cff')}">${av}</div>
+            <span class="${fontClass(a.nameFont)}" style="color:${escapeHTML(a.color || '#fff')}">${escapeHTML(a.displayName || '')}</span>
+            <span class="muted" style="font-size:11px">${fmtTime(m.createdAt)}</span>
+          </div>
+          ${txt}${img}
+        </div>`;
+      }).join('');
+    } catch (e) { el.innerHTML = `<div class="muted">Error: ${escapeHTML(e.message)}</div>`; }
   }
 
   function renderEditor(user) {
@@ -1180,6 +1218,167 @@
     }
   }
 
+  // ----- Servers + channels -----
+  async function loadServers() {
+    if (!state.me) { state.servers = []; renderServerRail(); return; }
+    try {
+      const r = await api('/api/servers');
+      state.servers = r.servers || [];
+    } catch (_e) { state.servers = []; }
+    renderServerRail();
+  }
+  function renderServerRail() {
+    const list = $('#serverList');
+    if (!list) return;
+    list.innerHTML = state.servers.map((s) => {
+      const active = state.activeServer && state.activeServer.id === s.id;
+      const icon = s.icon || s.name.charAt(0).toUpperCase();
+      return `<button class="server-icon ${active ? 'active' : ''}" data-server="${escapeHTML(s.id)}" title="${escapeHTML(s.name)}">${escapeHTML(icon)}</button>`;
+    }).join('');
+    list.querySelectorAll('.server-icon').forEach((b) => {
+      b.addEventListener('click', () => switchServer(b.dataset.server));
+    });
+    const homeBtn = $('.server-rail .server-icon[data-server="global"]');
+    if (homeBtn) {
+      homeBtn.classList.toggle('active', !state.activeServer);
+      homeBtn.onclick = () => switchServer('global');
+    }
+    const newBtn = $('#newServerBtn');
+    if (newBtn) newBtn.onclick = openServerCreateModal;
+  }
+  function renderChannelList() {
+    const wrap = $('#channelList');
+    if (!wrap) return;
+    if (!state.activeServer) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    $('#activeServerName').textContent = state.activeServer.name;
+    const inv = $('#inviteCode');
+    if (inv) {
+      inv.textContent = state.activeServer.inviteCode || '';
+      inv.onclick = () => {
+        if (!state.activeServer.inviteCode) return;
+        navigator.clipboard.writeText(state.activeServer.inviteCode).then(() => flashToast('C\u00f3digo copiado'));
+      };
+    }
+    const channels = state.activeServer.channels || [];
+    const wrap2 = $('#channels');
+    wrap2.innerHTML = channels.map((c) => `<div class="channel-row ${c.id === state.activeChannel ? 'active' : ''}" data-channel="${escapeHTML(c.id)}"><span class="hash">#</span> ${escapeHTML(c.name)}</div>`).join('');
+    wrap2.querySelectorAll('.channel-row').forEach((row) => {
+      row.addEventListener('click', () => switchChannel(row.dataset.channel));
+    });
+    const newCh = $('#newChannelBtn');
+    if (newCh) newCh.onclick = openCreateChannelPrompt;
+    const leave = $('#leaveServerBtn');
+    if (leave) leave.onclick = leaveActiveServer;
+  }
+  async function switchServer(id) {
+    if (id === 'global') {
+      state.activeServer = null;
+      state.activeChannel = null;
+      changeRoom('global');
+      renderServerRail();
+      renderChannelList();
+      return;
+    }
+    const s = state.servers.find((x) => x.id === id);
+    if (!s) return;
+    state.activeServer = s;
+    state.activeChannel = (s.channels[0] || {}).id || null;
+    renderServerRail();
+    renderChannelList();
+    if (state.activeChannel) changeRoom(`srv-${s.id}-${state.activeChannel}`);
+  }
+  function switchChannel(channelId) {
+    if (!state.activeServer) return;
+    state.activeChannel = channelId;
+    renderChannelList();
+    changeRoom(`srv-${state.activeServer.id}-${channelId}`);
+  }
+  async function changeRoom(room) {
+    if (room === state.room) return;
+    // Unsubscribe from old channels.
+    if (state.pusher) {
+      if (state.channel) state.pusher.unsubscribe(`room-${state.room}`);
+      if (state.presenceChannel) state.pusher.unsubscribe(`presence-room-${state.room}`);
+    }
+    state.room = room;
+    state.online.clear();
+    state.typing.clear();
+    paintTyping();
+    renderOnlineList();
+    const heading = $('.view-chat .view-head h1');
+    if (heading) {
+      heading.textContent = room === 'global'
+        ? 'Chat global'
+        : `${state.activeServer.name} · #${(state.activeServer.channels.find((c) => c.id === state.activeChannel) || {}).name || ''}`;
+    }
+    state.seen.clear();
+    state.messages.clear();
+    await loadMessages();
+    if (state.pusher) {
+      const ch = state.pusher.subscribe(`room-${state.room}`);
+      state.channel = ch;
+      ch.bind('message:new', (msg) => appendMessage(msg));
+      ch.bind('message:update', (msg) => updateMessage(msg));
+      const pres = state.pusher.subscribe(`presence-room-${state.room}`);
+      state.presenceChannel = pres;
+      pres.bind('pusher:subscription_succeeded', (members) => {
+        state.online.clear();
+        members.each((m) => state.online.set(m.id, m.info));
+        renderOnlineList();
+      });
+      pres.bind('pusher:member_added', (m) => { state.online.set(m.id, m.info); renderOnlineList(); });
+      pres.bind('pusher:member_removed', (m) => { state.online.delete(m.id); renderOnlineList(); });
+      pres.bind('client-typing', (data) => showTyping(data && data.displayName));
+    }
+  }
+  function openServerCreateModal() {
+    if (!state.me) { alert('Inicia sesi\u00f3n para crear / unirte a un server'); return; }
+    const choice = prompt('1) Crear nuevo server\n2) Unirme con c\u00f3digo de invitaci\u00f3n\n\nElige 1 o 2:');
+    if (choice === '1') {
+      const name = prompt('Nombre del server:');
+      if (!name) return;
+      const icon = prompt('Icono (1 emoji o letra, opcional):') || '';
+      api('/api/servers', { method: 'POST', body: { name, icon } })
+        .then((r) => { state.servers.push(r.server); switchServer(r.server.id); })
+        .catch((e) => alert('Error: ' + e.message));
+    } else if (choice === '2') {
+      const code = prompt('C\u00f3digo de invitaci\u00f3n:');
+      if (!code) return;
+      api('/api/servers/join', { method: 'POST', body: { code } })
+        .then((r) => {
+          if (!state.servers.some((s) => s.id === r.server.id)) state.servers.push(r.server);
+          switchServer(r.server.id);
+        })
+        .catch((e) => alert('Error: ' + e.message));
+    }
+  }
+  function openCreateChannelPrompt() {
+    if (!state.activeServer) return;
+    if (state.activeServer.ownerId !== state.me.id) { alert('Solo el owner crea canales'); return; }
+    const name = prompt('Nombre del canal (sin #):');
+    if (!name) return;
+    api(`/api/servers/${state.activeServer.id}/channels`, { method: 'POST', body: { name } })
+      .then((r) => {
+        const idx = state.servers.findIndex((s) => s.id === r.server.id);
+        if (idx >= 0) state.servers[idx] = r.server;
+        state.activeServer = r.server;
+        state.activeChannel = r.server.channels[r.server.channels.length - 1].id;
+        renderChannelList();
+        changeRoom(`srv-${r.server.id}-${state.activeChannel}`);
+      })
+      .catch((e) => alert('Error: ' + e.message));
+  }
+  async function leaveActiveServer() {
+    if (!state.activeServer) return;
+    if (!confirm(`\u00bfSalir de ${state.activeServer.name}?`)) return;
+    try {
+      await api(`/api/servers/${state.activeServer.id}/leave`, { method: 'DELETE' });
+      state.servers = state.servers.filter((s) => s.id !== state.activeServer.id);
+      switchServer('global');
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
   // ----- Wire up nav -----
   function setupNav() {
     document.addEventListener('click', (e) => {
@@ -1221,7 +1420,10 @@
         const p = $('#onlinePanel'); if (p) p.classList.toggle('open');
       });
     }
-    if (state.me) loadNotifications().catch(() => {});
+    if (state.me) {
+      loadNotifications().catch(() => {});
+      loadServers().catch(() => {});
+    }
   }
 
   boot();

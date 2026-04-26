@@ -112,8 +112,28 @@ router.post('/', authOptional, sendLimiter, upload.single('image'), async (req, 
   try {
     await connectDB();
     const text = (req.body.text || '').toString().slice(0, 2000).trim();
-    const room = (req.body.room || 'global').toString().slice(0, 40);
+    const room = (req.body.room || 'global').toString().slice(0, 80);
     const replyToId = (req.body.replyToId || '').toString();
+
+    // Server channel access control: rooms `srv-{serverId}-{channelId}`
+    // require the user to be a registered member of the server. Anons
+    // can only post in `global` rooms.
+    if (room.startsWith('srv-')) {
+      if (!req.user) return res.status(403).json({ error: 'Inicia sesi\u00f3n' });
+      const Server = require('../models/Server');
+      const parts = room.split('-');
+      if (parts.length < 3) return res.status(400).json({ error: 'Room inv\u00e1lido' });
+      const serverId = parts[1];
+      const channelId = parts[2];
+      const s = await Server.findById(serverId).lean();
+      if (!s) return res.status(404).json({ error: 'Server no encontrado' });
+      if (!s.members.some((m) => m.toString() === req.user.id)) {
+        return res.status(403).json({ error: 'No eres miembro' });
+      }
+      if (!s.channels.some((c) => c._id.toString() === channelId)) {
+        return res.status(404).json({ error: 'Canal no encontrado' });
+      }
+    }
 
     let imageUrl = '';
     let imagePublicId = '';
