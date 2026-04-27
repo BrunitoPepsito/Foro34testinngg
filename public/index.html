@@ -122,9 +122,13 @@
       <main class="main">
         <section class="view view-chat" data-view="/">
           <header class="view-head">
-            <button class="icon-btn mobile-only" id="mobileBackBtn" aria-label="Men\u00fa"><svg class="ic"><use href="#i-menu"/></svg></button>
-            <h1>Chat global</h1>
-            <span class="badge" id="rtBadge"><svg class="ic ic-xs"><use href="#i-radio"/></svg> conectando…</span>
+            <h1 id="viewTitle">Chat global</h1>
+            <span class="badge" id="rtBadge">EN VIVO</span>
+            <form class="header-search" id="searchForm" role="search" onsubmit="return false">
+              <svg class="ic ic-sm" style="color:var(--muted);margin-right:8px"><use href="#i-search"/></svg>
+              <input id="searchInput" type="search" placeholder="Buscar" aria-label="Buscar" />
+              <button type="submit" aria-label="Buscar"><svg class="ic ic-sm"><use href="#i-search"/></svg></button>
+            </form>
             <div class="view-head-actions">
               <button id="notifBtn" class="icon-btn js-only-auth" title="Notificaciones"><svg class="ic"><use href="#i-bell"/></svg><span class="notif-count"></span></button>
               <button id="onlineToggle" class="icon-btn" title="Quién está conectado"><svg class="ic"><use href="#i-users"/></svg></button>

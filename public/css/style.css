@@ -1550,3 +1550,430 @@ a:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* =================================================================
+ * v4 — YouTube-clean override layer
+ * Goal: neutral, content-first, minimal gradients, real grays.
+ * Loaded last so it wins specificity battles.
+ * ================================================================= */
+:root {
+  --bg: #0f0f0f;
+  --bg-2: #0f0f0f;
+  --bg-3: #1f1f1f;
+  --bg-4: #272727;
+  --bg-elev: #1f1f1f;
+  --surface: #1f1f1f;
+  --surface-hover: #272727;
+  --border: #272727;
+  --border-2: #3f3f3f;
+  --text: #f1f1f1;
+  --muted: #aaaaaa;
+  --primary: #3ea6ff;        /* YouTube blue link */
+  --primary-2: #65b8ff;
+  --primary-glow: transparent;
+  --accent: #3ea6ff;
+  --danger: #ff4d4d;
+  --live: #ff0033;
+  --success: #2ba640;
+  --font-ui: "Roboto", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body { font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
+::selection { background: rgba(62,166,255,.35); color: #fff; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Server rail (left, 72px slim YT-style) */
+.server-rail {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 8px 6px;
+}
+#app { grid-template-columns: 72px 256px minmax(0, 1fr); }
+.server-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--bg-3);
+  border: 1px solid transparent;
+  font-size: 18px;
+  transition: background 100ms ease, border-radius 100ms ease;
+}
+.server-icon:hover { background: var(--surface-hover); border-radius: 12px; }
+.server-icon.active {
+  background: var(--surface-hover);
+  border-radius: 12px;
+}
+.server-icon.active::before { display: none; }
+.server-icon.add { background: transparent; color: var(--muted); }
+.server-icon.add:hover { background: var(--surface-hover); color: var(--text); }
+
+/* Sidebar (240px, flat YT-style) */
+.sidebar {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 12px 0;
+  gap: 4px;
+}
+.brand {
+  padding: 6px 24px 14px;
+  font-size: 20px; font-weight: 700; letter-spacing: -.2px;
+}
+.brand-logo { color: var(--live); }
+.nav { gap: 0; padding: 0 12px; }
+.nav-btn {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px; font-weight: 500;
+  color: var(--text);
+}
+.nav-btn:hover { background: var(--surface-hover); }
+.nav-btn.active { background: var(--surface-hover); }
+
+.dm-list, .channel-list {
+  border-top: 1px solid var(--border);
+  padding: 12px 12px 0;
+  margin: 8px 0 0;
+  background: transparent;
+  border-left: 0; border-right: 0; border-bottom: 0;
+  border-radius: 0;
+}
+.dm-list-head, .channel-list-head {
+  font-size: 12px; font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: 6px 4px;
+  border-bottom: 0;
+  margin-bottom: 4px;
+}
+.dm-thread, .channel-row {
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--text);
+}
+.dm-thread:hover, .channel-row:hover { background: var(--surface-hover); }
+.dm-thread.active, .channel-row.active {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Auth card — flat */
+.auth-card {
+  margin: auto 12px 12px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 0 0;
+}
+.me-avatar { background: var(--bg-3); }
+
+/* Top header inside main view — sticky, YouTube-style */
+.view-head {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  position: sticky; top: 0; z-index: 20;
+  gap: 16px;
+}
+.view-head h1 {
+  font-size: 16px; font-weight: 500;
+  flex: 0 0 auto;
+}
+
+/* Live badge — flat red dot */
+.badge {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0;
+  letter-spacing: .04em;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.badge::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted);
+}
+.badge.connected { color: var(--text); }
+.badge.connected::before { background: var(--live); box-shadow: 0 0 0 0 rgba(255,0,51,.4); animation: pulse-dot 2s ease-out infinite; }
+.badge.error { color: var(--muted); }
+.badge.error::before { background: var(--muted); }
+.badge svg { display: none; } /* the <svg> inside the badge is replaced by the dot */
+
+@keyframes pulse-dot {
+  0%   { box-shadow: 0 0 0 0   rgba(255,0,51,.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(255,0,51,0); }
+  100% { box-shadow: 0 0 0 0   rgba(255,0,51,0); }
+}
+
+/* Header search */
+.header-search {
+  flex: 1;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex; align-items: center;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 36px;
+  padding: 0 6px 0 16px;
+  transition: border-color 120ms ease;
+}
+.header-search:focus-within { border-color: var(--border-2); background: #0a0a0a; }
+.header-search input {
+  flex: 1;
+  background: transparent;
+  border: 0; outline: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+.header-search input::placeholder { color: var(--muted); }
+.header-search button {
+  background: var(--surface-hover);
+  border: 0;
+  color: var(--text);
+  width: 56px; height: 28px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.header-search button:hover { background: #303030; }
+
+.view-head-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.icon-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  width: 40px; height: 40px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.icon-btn:hover { background: var(--surface-hover); }
+
+/* Buttons — flat */
+.btn {
+  background: var(--surface-hover);
+  border: 0;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px; font-weight: 500;
+  transition: background 100ms ease;
+}
+.btn:hover { background: #303030; }
+.btn-primary {
+  background: var(--text); color: #0a0a0a;
+}
+.btn-primary:hover { background: #fff; }
+.btn-ghost { background: transparent; }
+.btn-ghost:hover { background: var(--surface-hover); }
+.btn-danger { background: var(--danger); color: #fff; }
+
+/* Messages — flat, hover row, no card */
+.messages { padding: 12px 0; gap: 0; }
+.msg {
+  max-width: 100%;
+  padding: 6px 24px;
+  border-radius: 0;
+  background: transparent;
+  transition: background 80ms ease;
+  position: relative;
+  align-items: flex-start;
+}
+.msg:hover { background: rgba(255,255,255,.04); }
+.msg-avatar {
+  width: 36px; height: 36px;
+  background: var(--bg-3);
+  font-weight: 500;
+  font-size: 14px;
+}
+.msg-body { padding-left: 0; gap: 1px; }
+.msg-head { gap: 8px; align-items: center; }
+.msg-name { font-size: 14px; font-weight: 500; }
+.msg-name.anon { font-style: normal; color: var(--muted); }
+.msg-time { font-size: 11px; color: var(--muted); }
+.msg-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.msg-image { border-radius: 8px; max-width: 360px; }
+
+/* BOT badge — flat chip */
+.bot-tag, .badge-bot {
+  display: inline-block;
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* Composer — flat pill with inline actions */
+.composer {
+  padding: 12px 24px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  align-items: center;
+}
+.composer input[type=text] {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 14px;
+  height: 40px;
+}
+.composer input[type=text]:focus {
+  outline: 0;
+  border-color: var(--border-2);
+  background: #0a0a0a;
+}
+.upload {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  width: 40px; height: 40px;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.upload:hover { background: var(--surface-hover); }
+.send-btn {
+  background: var(--surface-hover);
+  border: 0;
+  color: var(--text);
+  height: 40px;
+  border-radius: 999px;
+  padding: 0 16px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 500;
+}
+.send-btn:hover { background: #303030; }
+.send-btn .send-label { display: none; }
+
+/* Reactions, mentions, replies — neutral */
+.mention {
+  background: rgba(62,166,255,.16);
+  color: var(--primary);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.reaction {
+  background: var(--surface-hover);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+.reaction:hover { background: #303030; }
+.reaction.mine { background: rgba(62,166,255,.2); border-color: rgba(62,166,255,.4); color: var(--primary); }
+
+/* Notifications panel */
+.notif-row { padding: 10px 12px; }
+.notif-row:hover { background: var(--surface-hover); }
+.notif-row.unread { background: rgba(62,166,255,.08); }
+.notif-count {
+  background: var(--live); color: #fff;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* Form (login/register) — clean card */
+.form {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.form input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.form input:focus { outline: 0; border-color: var(--primary); }
+
+/* Profile header — keep accent for content; chrome flat */
+.profile { background: var(--bg); }
+.profile-section {
+  padding: 22px 32px;
+  border-top: 1px solid var(--border);
+}
+.profile-info .pronouns,
+.profile-info .status {
+  background: var(--surface-hover);
+  border: 0;
+}
+
+/* Kill v3 gradients on chrome */
+.brand-logo svg { color: var(--live); }
+.me-avatar-wrap { background: transparent !important; }
+
+/* Mobile menu button — circular ghost */
+.mobile-menu-btn {
+  position: fixed;
+  top: 8px; left: 8px;
+  z-index: 30;
+  width: 40px; height: 40px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  border-radius: 999px;
+  display: none;
+  align-items: center; justify-content: center;
+}
+.mobile-menu-btn:hover { background: var(--surface-hover); }
+
+@media (max-width: 760px) {
+  #app { grid-template-columns: minmax(0, 1fr) !important; }
+  .server-rail { display: none; }
+  .mobile-menu-btn { display: inline-flex; }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: min(280px, 80%);
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 240ms cubic-bezier(.22,1,.36,1);
+    box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 35;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+  .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  .view-head { padding: 0 12px 0 56px; }
+  .view-head h1 { font-size: 15px; }
+  .header-search { display: none; }
+  .messages { padding: 8px 0; }
+  .msg { padding: 6px 12px; }
+  .composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .send-btn { padding: 0 12px; }
+}
+
+/* Reduced motion — already handled */
+
+/* v4 — BOT chip flat */
+.bot-badge {
+  background: var(--surface-hover) !important;
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: .04em !important;
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}

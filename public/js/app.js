@@ -512,7 +512,8 @@
     if (!el) return;
     const ok = kind === 'connected';
     el.className = 'badge' + (ok ? ' connected' : (kind === 'connecting' ? '' : ' error'));
-    el.innerHTML = `<svg class="ic ic-xs"><use href="#i-${ok ? 'radio' : 'circle'}"/></svg> ${label}`;
+    // CSS shows a pulsing red dot on .badge.connected; otherwise a flat dot. The text is the label.
+    el.textContent = label;
   }
 
   function debouncedBadge(kind, label, delay) {
@@ -1764,6 +1765,25 @@
     setupStickerPicker();
     setupDmControls();
     setupMobileDrawer();
+    setupHeaderSearch();
+  }
+
+  function setupHeaderSearch() {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+    let timer;
+    const apply = () => {
+      const q = (input.value || '').trim().toLowerCase();
+      const list = document.getElementById('messages');
+      if (!list) return;
+      const items = list.querySelectorAll('.msg');
+      if (!q) { items.forEach((el) => { el.style.display = ''; }); return; }
+      items.forEach((el) => {
+        const txt = (el.textContent || '').toLowerCase();
+        el.style.display = txt.includes(q) ? '' : 'none';
+      });
+    };
+    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(apply, 100); });
   }
 
   boot();
