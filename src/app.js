@@ -4,6 +4,8 @@ const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const { authOptional } = require('./lib/auth');
 const authRoutes = require('./routes/auth');
@@ -37,11 +39,51 @@ function createApp() {
   const app = express();
   app.set('trust proxy', 1);
 
+  // Security headers. CSP is permissive enough to allow Pusher CDN + Google Fonts
+  // + Cloudinary/data: images while still blocking arbitrary inline scripts from
+  // user-generated text.
+  app.use(helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        'default-src': ["'self'"],
+        'script-src': ["'self'", 'https://js.pusher.com'],
+        'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        'img-src': ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com', 'https:'],
+        'media-src': ["'self'", 'blob:', 'https://res.cloudinary.com', 'https:'],
+        'connect-src': ["'self'", 'https://*.pusher.com', 'wss://*.pusher.com', 'wss://*.pusherapp.com'],
+        'frame-ancestors': ["'self'"],
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }));
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use(cookieParser());
   app.use(authOptional);
+
+  // Rate limits — all keyed by IP. Numbers are intentionally generous so legit
+  // chat usage is never blocked, but catastrophic spam/abuse is throttled.
+  const messageLimiter = rateLimit({
+    windowMs: 10 * 1000, max: 30,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Demasiados mensajes, esperá un momento.' },
+  });
+  const authLimiter = rateLimit({
+    windowMs: 60 * 1000, max: 8,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Demasiados intentos de login. Intentá en un minuto.' },
+  });
+  const writeLimiter = rateLimit({
+    windowMs: 60 * 1000, max: 60,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Demasiadas operaciones, esperá un poco.' },
+  });
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -53,12 +95,12 @@ function createApp() {
   });
 
   app.use('/api/config', configRoutes);
-  app.use('/api/auth', authRoutes);
+  app.use('/api/auth', authLimiter, authRoutes);
   app.use('/api/users', userRoutes);
-  app.use('/api/messages', messageRoutes);
+  app.use('/api/messages', messageLimiter, messageRoutes);
   app.use('/api/realtime', realtimeRoutes);
-  app.use('/api/servers', serverRoutes);
-  app.use('/api/stickers', stickerRoutes);
+  app.use('/api/servers', writeLimiter, serverRoutes);
+  app.use('/api/stickers', writeLimiter, stickerRoutes);
   app.use('/api/dms', dmRoutes);
 
   const publicDir = path.join(__dirname, '..', 'public');

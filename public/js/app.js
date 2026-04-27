@@ -507,14 +507,30 @@
     list.scrollTop = list.scrollHeight;
   }
 
+  function setBadge(kind, label) {
+    const el = $('#rtBadge');
+    if (!el) return;
+    const ok = kind === 'connected';
+    el.className = 'badge' + (ok ? ' connected' : (kind === 'connecting' ? '' : ' error'));
+    el.innerHTML = `<svg class="ic ic-xs"><use href="#i-${ok ? 'radio' : 'circle'}"/></svg> ${label}`;
+  }
+
+  function debouncedBadge(kind, label, delay) {
+    clearTimeout(state._badgeTimer);
+    if (delay && delay > 0) {
+      state._badgeTimer = setTimeout(() => setBadge(kind, label), delay);
+    } else {
+      setBadge(kind, label);
+    }
+  }
+
   async function setupRealtime() {
-    const badge = $('#rtBadge');
     if (!state.config || !state.config.pusher || !state.config.pusher.enabled) {
-      badge.textContent = 'tiempo real desactivado';
-      badge.className = 'badge error';
+      setBadge('error', 'tiempo real desactivado');
       setInterval(loadMessages, 3000);
       return;
     }
+    setBadge('connecting', 'conectando…');
     try {
       const p = new Pusher(state.config.pusher.key, {
         cluster: state.config.pusher.cluster,
@@ -525,11 +541,19 @@
       state.pusher = p;
       const channel = p.subscribe(`room-${state.room}`);
       state.channel = channel;
-      p.connection.bind('connected', () => { badge.textContent = 'en vivo'; badge.className = 'badge connected'; });
-      p.connection.bind('error', () => { badge.textContent = 'sin conexión'; badge.className = 'badge error'; });
-      p.connection.bind('disconnected', () => { badge.textContent = 'desconectado'; badge.className = 'badge error'; });
+      // Single state_change listener with debounce: don't flash "sin conexión" while
+      // Pusher is just rotating transports (websocket -> xhr_streaming, etc.)
+      p.connection.bind('state_change', (s) => {
+        const cur = s && s.current;
+        if (cur === 'connected') { debouncedBadge('connected', 'en vivo', 0); }
+        else if (cur === 'connecting') { debouncedBadge('connecting', 'conectando…', 800); }
+        else if (cur === 'unavailable') { debouncedBadge('error', 'sin red', 3500); }
+        else if (cur === 'failed') { debouncedBadge('error', 'sin conexión', 3500); }
+        else if (cur === 'disconnected') { debouncedBadge('error', 'desconectado', 3500); }
+      });
       channel.bind('message:new', (msg) => appendMessage(msg));
       channel.bind('message:update', (msg) => updateMessage(msg));
+      channel.bind('bot:typing', (data) => showBotTyping(data && data.botName));
 
       // Presence: who's online + typing indicator (client events).
       const pres = p.subscribe(`presence-room-${state.room}`);
@@ -553,10 +577,22 @@
       }
     } catch (err) {
       console.error('pusher init', err);
-      badge.textContent = 'sin tiempo real';
-      badge.className = 'badge error';
+      setBadge('error', 'sin tiempo real');
       setInterval(loadMessages, 3000);
     }
+  }
+
+  function showBotTyping(botName) {
+    const el = $('#typingIndicator');
+    if (!el) return;
+    const name = botName || 'UbreBot';
+    el.classList.remove('hidden');
+    el.innerHTML = `<span class="bot-typing"><svg class="ic ic-xs"><use href="#i-zap"/></svg> ${escapeHTML(name)} está pensando<span class="dots"><i></i><i></i><i></i></span></span>`;
+    clearTimeout(state._botTypingTimer);
+    state._botTypingTimer = setTimeout(() => {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+    }, 12000);
   }
 
   function renderOnlineList() {
@@ -734,6 +770,7 @@
       if (state.pendingFile) fd.append('image', state.pendingFile);
       fd.append('room', state.room);
       if (state.replyTo) fd.append('replyToId', state.replyTo.id);
+      const willInvokeBot = /(^|\s)@ubrebot(\s|$|[!?,.])/i.test(value);
       try {
         text.value = '';
         state.pendingFile = null;
@@ -741,9 +778,15 @@
         previewBar.classList.add('hidden');
         state.replyTo = null;
         showComposerBanner();
+        if (willInvokeBot) showBotTyping('UbreBot');
         const data = await api('/api/messages', { method: 'POST', body: fd });
         if (data && data.message) appendMessage(data.message);
-        if (data && data.botReply) appendMessage(data.botReply);
+        if (data && data.botReply) {
+          // Hide typing indicator now that the reply is on its way.
+          const ti = $('#typingIndicator');
+          if (ti) { ti.classList.add('hidden'); ti.innerHTML = ''; }
+          appendMessage(data.botReply);
+        }
         // Track our own anon owner for self-recognition (own-message styling).
         if (data && data.message && data.message.anonOwner) {
           state.myAnonId = data.message.anonOwner;
@@ -1380,6 +1423,7 @@
       state.channel = ch;
       ch.bind('message:new', (msg) => appendMessage(msg));
       ch.bind('message:update', (msg) => updateMessage(msg));
+      ch.bind('bot:typing', (data) => showBotTyping(data && data.botName));
       const pres = state.pusher.subscribe(`presence-room-${state.room}`);
       state.presenceChannel = pres;
       pres.bind('pusher:subscription_succeeded', (members) => {
@@ -1650,6 +1694,35 @@
     window.addEventListener('popstate', render);
   }
 
+  // ----- Mobile drawer -----
+  function setupMobileDrawer() {
+    const sidebar = $('#sidebar');
+    const backdrop = $('#sidebarBackdrop');
+    const open = () => {
+      if (sidebar) sidebar.classList.add('open');
+      if (backdrop) backdrop.classList.add('open');
+    };
+    const close = () => {
+      if (sidebar) sidebar.classList.remove('open');
+      if (backdrop) backdrop.classList.remove('open');
+    };
+    const menuBtn = $('#mobileMenuBtn');
+    if (menuBtn) menuBtn.addEventListener('click', open);
+    const backBtn = $('#mobileBackBtn');
+    if (backBtn) backBtn.addEventListener('click', open);
+    const closeBtn = $('#sidebarClose');
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (backdrop) backdrop.addEventListener('click', close);
+    // Close drawer when navigating
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || !sidebar || !sidebar.classList.contains('open')) return;
+      if (t.closest('[data-route]') || t.closest('.dm-thread') || t.closest('.channel-row') || t.closest('[data-server]')) {
+        close();
+      }
+    });
+  }
+
   // ----- Boot -----
   async function boot() {
     setupNav();
@@ -1690,6 +1763,7 @@
     setupVoiceRecorder();
     setupStickerPicker();
     setupDmControls();
+    setupMobileDrawer();
   }
 
   boot();

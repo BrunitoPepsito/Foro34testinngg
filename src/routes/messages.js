@@ -319,6 +319,8 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
     // UbreBot trigger — runs before the static command bot.
     if (userPayload && ubrebot.isMentioned(modText)) {
       const prompt = ubrebot.stripMention(modText);
+      // Tell the room UbreBot is "typing" so the UI shows the indicator immediately.
+      broadcast(`room-${room}`, 'bot:typing', { botName: 'UbreBot', at: Date.now() }).catch(() => {});
       ubrebot.ask(prompt, { displayName: author.displayName }).then(async (reply) => {
         try {
           const ubre = {

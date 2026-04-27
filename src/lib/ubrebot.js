@@ -1,18 +1,61 @@
-// UbreBot — calls Google Gemini and returns a short conversational reply.
-// If neither GEMINI_API_KEY nor GROQ_API_KEY is set, returns a stub so the
-// rest of the app keeps working. Mentioned via "@UbreBot ..." anywhere in chat.
+// UbreBot — calls Google Gemini (preferred, faster with smaller maxOutputTokens)
+// or Groq as fallback. Mentioned via "@UbreBot ..." anywhere in chat.
+//
+// Speed knobs:
+//   - Aggressive timeout (8s default) so a slow upstream doesn't keep the user waiting forever.
+//   - In-memory LRU cache by (provider, prompt) to instant-respond to repeated mentions.
+//   - Lower maxOutputTokens (160) — most replies are 1-3 sentences anyway.
+//
+// Tone: latin-spanish, playful but not cringe, uses light emojis, never explains
+// the punchline, calls out absurd questions but doesn't moralize.
 
-const SYSTEM_PROMPT = `Eres UbreBot, un asistente conversacional de Foro34, un chat tipo Discord en espa\u00f1ol. Eres c\u00e1lido, juguet\u00f3n y conciso (1-3 oraciones por respuesta a menos que te pidan algo largo). Usas emojis con moderaci\u00f3n. Hablas en espa\u00f1ol latino, t\u00fa o ti seg\u00fan corresponda. No inventes hechos personales sobre el usuario.`;
+const SYSTEM_PROMPT = [
+  'Eres UbreBot, el bot oficial de Foro34, un chat tipo Discord en espa\u00f1ol latino.',
+  'Personalidad: c\u00e1lido, sarc\u00e1stico amable, juguet\u00f3n, con humor seco. Sos como ese amigo que tira chistes pero te ayuda.',
+  'Estilo: respondes en 1\u20133 oraciones cortas. Espa\u00f1ol latino casual (vos/te, "che", "dale", "posta", "qu\u00e9 onda"). Nada de tono corporativo ni "como modelo de IA".',
+  'Emojis: usa 0 o 1 por respuesta. Preferidos: \ud83d\ude2c \ud83e\udd14 \ud83d\udd25 \u2728 \ud83e\udd20 \ud83d\udca9 \ud83d\ude44.',
+  'Si te preguntan algo absurdo, segui la corriente con humor en vez de moralizar.',
+  'NUNCA inventes datos personales de quien te habla.',
+  'Si no sab\u00e9s algo, decilo con gracia.',
+  'No expliques que sos una IA a menos que te pregunten directamente.',
+].join(' ');
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const TIMEOUT_MS = parseInt(process.env.UBREBOT_TIMEOUT_MS || '8000', 10);
+const MAX_TOKENS = parseInt(process.env.UBREBOT_MAX_TOKENS || '160', 10);
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const cache = new Map(); // key -> { reply, exp }
+
+function cacheKey(provider, prompt) {
+  return `${provider}:${prompt.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+}
+function fromCache(key) {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  if (hit.exp < Date.now()) { cache.delete(key); return null; }
+  return hit.reply;
+}
+function toCache(key, reply) {
+  if (cache.size > 200) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(key, { reply, exp: Date.now() + CACHE_TTL_MS });
+}
+
+function fetchWithTimeout(url, opts) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
 
 async function callGemini(apiKey, prompt, userIntro) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
     systemInstruction: { role: 'system', parts: [{ text: SYSTEM_PROMPT + (userIntro ? '\n' + userIntro : '') }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.8, maxOutputTokens: 350 },
+    generationConfig: { temperature: 0.85, maxOutputTokens: MAX_TOKENS, topP: 0.9 },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
@@ -20,7 +63,7 @@ async function callGemini(apiKey, prompt, userIntro) {
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
     ],
   };
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -37,7 +80,7 @@ async function callGemini(apiKey, prompt, userIntro) {
 }
 
 async function callGroq(apiKey, prompt, userIntro) {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -45,8 +88,9 @@ async function callGroq(apiKey, prompt, userIntro) {
     },
     body: JSON.stringify({
       model: GROQ_MODEL,
-      temperature: 0.8,
-      max_tokens: 350,
+      temperature: 0.85,
+      max_tokens: MAX_TOKENS,
+      top_p: 0.9,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT + (userIntro ? '\n' + userIntro : '') },
         { role: 'user', content: prompt },
@@ -71,17 +115,35 @@ async function ask(prompt, context = {}) {
     ? `Te est\u00e1 hablando ${context.displayName}.`
     : '';
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    try { return await callGemini(geminiKey, cleaned, userIntro); }
-    catch (err) { console.error('gemini error', err); return 'Se me ca\u00edo el wifi mental \ud83e\udd2f'; }
-  }
+  // Try Groq first if available — it is significantly faster than Gemini for short replies.
+  // Fall back to Gemini if Groq is missing.
   const groqKey = process.env.GROQ_API_KEY;
-  if (groqKey) {
-    try { return await callGroq(groqKey, cleaned, userIntro); }
-    catch (err) { console.error('groq error', err); return 'Se me ca\u00edo el wifi mental \ud83e\udd2f'; }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const preferGemini = process.env.UBREBOT_PROVIDER === 'gemini';
+
+  const order = [];
+  if (preferGemini && geminiKey) order.push(['gemini', () => callGemini(geminiKey, cleaned, userIntro)]);
+  if (groqKey) order.push(['groq', () => callGroq(groqKey, cleaned, userIntro)]);
+  if (geminiKey && !preferGemini) order.push(['gemini', () => callGemini(geminiKey, cleaned, userIntro)]);
+
+  for (const [name, run] of order) {
+    const ck = cacheKey(name, cleaned);
+    const cached = fromCache(ck);
+    if (cached) return cached;
+    try {
+      const reply = await run();
+      toCache(ck, reply);
+      return reply;
+    } catch (err) {
+      const msg = (err && err.name === 'AbortError') ? 'timeout' : (err && err.message) || 'unknown';
+      console.error(`ubrebot ${name} error:`, msg);
+      // try next provider
+    }
   }
-  return 'Hola, soy UbreBot. Mi cerebro a\u00fan no est\u00e1 conectado. Configura GEMINI_API_KEY (o GROQ_API_KEY) y respondo de verdad. \u2728';
+  if (!order.length) {
+    return 'Hola, soy UbreBot. Mi cerebro a\u00fan no est\u00e1 conectado. Configur\u00e1 GROQ_API_KEY o GEMINI_API_KEY y respondo de verdad. \u2728';
+  }
+  return 'Se me cay\u00f3 el wifi mental, dame un toque y vuelvo a intentarlo \ud83e\udd2f';
 }
 
 const UBREBOT_USERNAME = 'ubrebot';
