@@ -1033,17 +1033,30 @@
     }).join('');
     const bioHtml = renderBioMarkdown(user.bio || (isMe ? '_Edita tu perfil para añadir una bio._' : 'Sin bio.'));
 
+    const stats = user.stats || {};
+    const integ = user.integrations || { spotify: { connected: false }, brawlStars: { connected: false } };
+    const memberSince = user.createdAt ? new Date(user.createdAt) : null;
+    const memberSinceLabel = memberSince ? memberSince.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+
     container.innerHTML = `
       <div class="${profileClass}" style="${styleVars}">
         <div class="${bannerClass}">
+          <div class="profile-banner-aura" aria-hidden="true"></div>
           ${isMe ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>` : ''}
         </div>
         <div class="profile-head">
-          <div class="${avatarFrameClasses}">${avatarTag}</div>
+          <div class="avatar-halo ${decoration !== 'none' ? `deco-halo-${decoration}` : ''}">
+            <div class="${avatarFrameClasses}">${avatarTag}</div>
+          </div>
           <div class="profile-info">
-            ${user.title ? `<div class="title-badge">${escapeHTML(user.title)}</div>` : ''}
+            ${user.title ? `<div class="title-badge"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg>${escapeHTML(user.title)}</div>` : ''}
             <h2 class="${fontClass(user.nameFont)}" style="color:${escapeHTML(accent)}">${escapeHTML(user.displayName)} ${pronounsHtml}</h2>
             <div class="handle">@${escapeHTML(user.username)}</div>
+            <div class="profile-meta-row">
+              ${memberSinceLabel ? `<span class="meta-chip"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-calendar"/></svg>Miembro desde ${escapeHTML(memberSinceLabel)}</span>` : ''}
+              <span class="meta-chip"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-message"/></svg>${stats.messages || 0} msgs</span>
+              ${stats.reactionsReceived ? `<span class="meta-chip"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-flame"/></svg>${stats.reactionsReceived} reacciones</span>` : ''}
+            </div>
             ${statusHtml}
           </div>
         </div>
@@ -1054,6 +1067,18 @@
         </div>` : ''}
         <div class="profile-bio">${bioHtml}</div>
         ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
+        <div class="profile-stats-grid">
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-message"/></svg></div><div class="stat-num">${stats.messages || 0}</div><div class="stat-label">Mensajes</div></div>
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg></div><div class="stat-num">${stats.images || 0}</div><div class="stat-label">Imágenes</div></div>
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg></div><div class="stat-num">${stats.voiceNotes || 0}</div><div class="stat-label">Notas de voz</div></div>
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-bar-chart"/></svg></div><div class="stat-num">${stats.polls || 0}</div><div class="stat-label">Encuestas</div></div>
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-flame"/></svg></div><div class="stat-num">${stats.reactionsReceived || 0}</div><div class="stat-label">Reacciones</div></div>
+          <div class="stat-card"><div class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg></div><div class="stat-num">${(user.achievements || []).length}</div><div class="stat-label">Logros</div></div>
+        </div>
+        <div class="profile-integrations" id="profileIntegrations">
+          ${renderSpotifyCard(integ.spotify, user.username, isMe)}
+          ${renderBrawlStarsCard(integ.brawlStars, isMe)}
+        </div>
         <div id="pinnedSection" class="profile-pins"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-pin"/></svg> Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
         <div id="achievementsSection" class="profile-achievements"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg> Logros</h3><div id="achievementsGrid" class="achievement-grid"></div></div>
         ${isMe ? renderEditor(user) : ''}
@@ -1062,7 +1087,169 @@
 
     loadPinnedMessages(user.username).catch(() => {});
     renderAchievements(user);
-    if (isMe) wireEditor(user);
+    loadSpotifyNowPlaying(user.username).catch(() => {});
+    if (isMe) {
+      wireEditor(user);
+      wireIntegrations();
+    }
+    handleSpotifyCallbackToast();
+  }
+
+  // ------- Integrations rendering -------
+  function renderSpotifyCard(sp, username, isMe) {
+    if (!sp || !sp.connected) {
+      if (!isMe) return '';
+      return `<div class="integ-card integ-spotify is-empty">
+        <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Spotify</span></div>
+        <p class="muted" style="margin:6px 0 12px">Conectá tu cuenta para mostrar lo que estás escuchando.</p>
+        <a class="btn btn-spotify" href="/api/integrations/spotify/connect"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-music"/></svg> Conectar Spotify</a>
+      </div>`;
+    }
+    return `<div class="integ-card integ-spotify" data-username="${escapeHTML(username)}">
+      <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Spotify</span>
+        ${sp.profileUrl ? `<a class="integ-badge" href="${escapeHTML(sp.profileUrl)}" target="_blank" rel="noopener">${escapeHTML(sp.displayName || 'Perfil')}</a>` : ''}
+      </div>
+      <div class="integ-body" id="spotifyNowPlaying">
+        <div class="muted">Cargando…</div>
+      </div>
+      ${isMe ? `<div class="integ-foot">
+        <button class="btn btn-ghost btn-sm" id="spotifyDisconnect"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link-off"/></svg> Desconectar</button>
+      </div>` : ''}
+    </div>`;
+  }
+
+  function renderBrawlStarsCard(bs, isMe) {
+    if (!bs || !bs.connected) {
+      if (!isMe) return '';
+      return `<div class="integ-card integ-bs is-empty">
+        <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg><span>Brawl Stars</span></div>
+        <p class="muted" style="margin:6px 0 12px">Pegá tu tag (ej: <code>#YYY1234</code>) para mostrar tus trofeos y club.</p>
+        <form id="bsConnectForm" class="bs-connect-row">
+          <input type="text" id="bsTagInput" placeholder="#YOURTAG" maxlength="16" autocomplete="off" />
+          <button class="btn btn-bs" type="submit"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-gamepad"/></svg> Conectar</button>
+        </form>
+        <p class="form-error" id="bsError"></p>
+      </div>`;
+    }
+    const trophyPct = bs.highestTrophies > 0 ? Math.min(100, Math.round((bs.trophies / bs.highestTrophies) * 100)) : 0;
+    return `<div class="integ-card integ-bs">
+      <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg><span>Brawl Stars</span>
+        <span class="integ-badge">${escapeHTML(bs.tag)}</span>
+      </div>
+      <div class="integ-body">
+        <div class="bs-name">${escapeHTML(bs.name || '')}</div>
+        <div class="bs-stats">
+          <div class="bs-stat"><div class="bs-stat-num">${bs.trophies}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg>Trofeos</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.highestTrophies}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-flame"/></svg>Récord</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.brawlersUnlocked}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield"/></svg>Brawlers</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.expLevel}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg>Nivel</div></div>
+        </div>
+        <div class="bs-progress" title="Trofeos actuales / récord histórico">
+          <div class="bs-progress-bar" style="width:${trophyPct}%"></div>
+        </div>
+        ${bs.club && bs.club.name ? `<div class="bs-club"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield"/></svg> Club: <strong>${escapeHTML(bs.club.name)}</strong></div>` : ''}
+      </div>
+      ${isMe ? `<div class="integ-foot">
+        <button class="btn btn-ghost btn-sm" id="bsRefresh"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg> Actualizar</button>
+        <button class="btn btn-ghost btn-sm" id="bsDisconnect"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link-off"/></svg> Desconectar</button>
+      </div>` : ''}
+    </div>`;
+  }
+
+  async function loadSpotifyNowPlaying(username) {
+    const target = $('#spotifyNowPlaying');
+    if (!target) return;
+    try {
+      const data = await api(`/api/integrations/spotify/now-playing/${encodeURIComponent(username)}`);
+      if (!data.connected || !data.track) {
+        target.innerHTML = '<div class="muted">Sin reproducción reciente.</div>';
+        return;
+      }
+      const t = data.track;
+      const artists = (t.artists || []).map((a) => escapeHTML(a.name)).join(', ');
+      const cover = t.album && t.album.image ? `<img class="np-cover" src="${escapeHTML(t.album.image)}" alt="" />` : '';
+      const playingChip = data.isPlaying
+        ? '<span class="np-chip is-live"><span class="np-dot"></span> Sonando ahora</span>'
+        : '<span class="np-chip">Última escuchada</span>';
+      target.innerHTML = `
+        <div class="np">
+          ${cover}
+          <div class="np-meta">
+            ${playingChip}
+            <a class="np-title" href="${escapeHTML(t.url || '#')}" target="_blank" rel="noopener">${escapeHTML(t.name)}</a>
+            <div class="np-artist">${artists}</div>
+          </div>
+        </div>`;
+    } catch (e) {
+      target.innerHTML = `<div class="muted">No se pudo cargar Spotify.</div>`;
+    }
+  }
+
+  function wireIntegrations() {
+    // Spotify disconnect
+    const spDisc = $('#spotifyDisconnect');
+    if (spDisc) {
+      spDisc.addEventListener('click', async () => {
+        try {
+          await api('/api/integrations/spotify/disconnect', { method: 'POST', body: {} });
+          const r = await api(`/api/users/${encodeURIComponent(state.me.username)}`);
+          state.me = { ...state.me, integrations: r.user.integrations };
+          renderProfileView();
+        } catch (err) { alert(err.message); }
+      });
+    }
+    // BS connect form
+    const bsForm = $('#bsConnectForm');
+    if (bsForm) {
+      bsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const tag = $('#bsTagInput').value.trim();
+        const errorEl = $('#bsError');
+        errorEl.textContent = '';
+        try {
+          await api('/api/integrations/brawlstars/connect', { method: 'POST', body: { tag } });
+          const r = await api(`/api/users/${encodeURIComponent(state.me.username)}`);
+          state.me = { ...state.me, integrations: r.user.integrations };
+          renderProfileView();
+        } catch (err) { errorEl.textContent = err.message; }
+      });
+    }
+    // BS refresh / disconnect
+    const bsRefresh = $('#bsRefresh');
+    if (bsRefresh) {
+      bsRefresh.addEventListener('click', async () => {
+        try {
+          await api('/api/integrations/brawlstars/refresh', { method: 'POST', body: {} });
+          const r = await api(`/api/users/${encodeURIComponent(state.me.username)}`);
+          state.me = { ...state.me, integrations: r.user.integrations };
+          renderProfileView();
+        } catch (err) { alert(err.message); }
+      });
+    }
+    const bsDisc = $('#bsDisconnect');
+    if (bsDisc) {
+      bsDisc.addEventListener('click', async () => {
+        try {
+          await api('/api/integrations/brawlstars/disconnect', { method: 'POST', body: {} });
+          const r = await api(`/api/users/${encodeURIComponent(state.me.username)}`);
+          state.me = { ...state.me, integrations: r.user.integrations };
+          renderProfileView();
+        } catch (err) { alert(err.message); }
+      });
+    }
+  }
+
+  function handleSpotifyCallbackToast() {
+    const params = new URLSearchParams(location.search);
+    const sp = params.get('spotify');
+    if (!sp) return;
+    if (sp === 'ok') {
+      console.log('Spotify conectado.');
+    } else {
+      console.warn('Spotify: ' + (params.get('reason') || sp));
+    }
+    // clean url
+    history.replaceState({}, '', location.pathname);
   }
 
   const ACHIEVEMENT_META = {
