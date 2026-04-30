@@ -54,6 +54,42 @@ const AchievementSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Integrations are stored on the user doc so we don't need a separate collection.
+// Tokens are kept server-side only (toPublicJSON omits them).
+const SpotifyIntegrationSchema = new mongoose.Schema(
+  {
+    connected: { type: Boolean, default: false },
+    spotifyId: { type: String, default: '' },
+    displayName: { type: String, default: '' },
+    profileUrl: { type: String, default: '' },
+    avatarUrl: { type: String, default: '' },
+    accessToken: { type: String, default: '' },
+    refreshToken: { type: String, default: '' },
+    expiresAt: { type: Date, default: null },
+    scope: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
+const BrawlStarsIntegrationSchema = new mongoose.Schema(
+  {
+    connected: { type: Boolean, default: false },
+    tag: { type: String, default: '' }, // normalized like "#YYY..."
+    name: { type: String, default: '' },
+    trophies: { type: Number, default: 0 },
+    highestTrophies: { type: Number, default: 0 },
+    expLevel: { type: Number, default: 0 },
+    brawlersUnlocked: { type: Number, default: 0 },
+    club: {
+      tag: { type: String, default: '' },
+      name: { type: String, default: '' },
+    },
+    iconId: { type: Number, default: 0 },
+    fetchedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const UserSchema = new mongoose.Schema(
   {
     username: {
@@ -103,6 +139,10 @@ const UserSchema = new mongoose.Schema(
       images: { type: Number, default: 0 },
       stickersUsed: { type: Number, default: 0 },
     },
+    integrations: {
+      spotify: { type: SpotifyIntegrationSchema, default: () => ({}) },
+      brawlStars: { type: BrawlStarsIntegrationSchema, default: () => ({}) },
+    },
   },
   { timestamps: true },
 );
@@ -129,6 +169,25 @@ UserSchema.methods.toPublicJSON = function () {
     pinnedMessageIds: (this.pinnedMessageIds || []).map((id) => id.toString()),
     achievements: (this.achievements || []).map((a) => ({ key: a.key, unlockedAt: a.unlockedAt })),
     stats: this.stats || {},
+    integrations: {
+      spotify: {
+        connected: !!(this.integrations && this.integrations.spotify && this.integrations.spotify.connected),
+        displayName: (this.integrations && this.integrations.spotify && this.integrations.spotify.displayName) || '',
+        profileUrl: (this.integrations && this.integrations.spotify && this.integrations.spotify.profileUrl) || '',
+        avatarUrl: (this.integrations && this.integrations.spotify && this.integrations.spotify.avatarUrl) || '',
+      },
+      brawlStars: {
+        connected: !!(this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.connected),
+        tag: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.tag) || '',
+        name: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.name) || '',
+        trophies: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.trophies) || 0,
+        highestTrophies: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.highestTrophies) || 0,
+        expLevel: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.expLevel) || 0,
+        brawlersUnlocked: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.brawlersUnlocked) || 0,
+        club: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.club) || { tag: '', name: '' },
+        iconId: (this.integrations && this.integrations.brawlStars && this.integrations.brawlStars.iconId) || 0,
+      },
+    },
     createdAt: this.createdAt,
   };
 };
