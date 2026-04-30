@@ -129,6 +129,12 @@
         <symbol id="i-arrow-down" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></symbol>
         <symbol id="i-radio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></symbol>
         <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+        <symbol id="i-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="8.5" cy="14" r="1.5"/><circle cx="15.5" cy="14" r="1.5"/><line x1="12" y1="4" x2="12" y2="8"/><line x1="8" y1="4" x2="16" y2="4"/></symbol>
+        <symbol id="i-bar-chart" viewBox="0 0 24 24"><line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></symbol>
+        <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3a2 2 0 0 1 0 4 5 5 0 0 1-3 1"/><path d="M7 5H4a2 2 0 0 0 0 4 5 5 0 0 0 3 1"/></symbol>
+        <symbol id="i-crown" viewBox="0 0 24 24"><path d="M2 7l5 4 5-7 5 7 5-4-2 13H4z"/></symbol>
+        <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/></symbol>
       </defs>
     </svg>
 
@@ -238,9 +244,6 @@
           </div>
         </section>
 
-        <footer class="sidebar-foot muted">
-          Express · MongoDB · Cloudinary · Pusher
-        </footer>
       </aside>
 
       <!-- Main: vistas SPA (chat / login / register / profile) -->
@@ -251,7 +254,6 @@
         <section class="view view-chat" data-view="/" aria-labelledby="viewTitle">
           <header class="view-head">
             <h1 id="viewTitle">Chat global</h1>
-            <span class="badge" id="rtBadge" aria-live="polite">EN VIVO</span>
             <form class="header-search" id="searchForm" role="search" onsubmit="return false">
               <svg class="ic ic-sm" style="color:var(--muted);margin-right:8px" aria-hidden="true"><use href="#i-search"/></svg>
               <input id="searchInput" type="search" placeholder="Buscar" aria-label="Buscar en el chat" />
@@ -264,8 +266,8 @@
                 <svg class="ic" aria-hidden="true"><use href="#i-bell"/></svg>
                 <span class="notif-count"></span>
               </button>
-              <button id="onlineToggle" class="icon-btn" title="Quién está conectado" aria-label="Quién está conectado">
-                <svg class="ic" aria-hidden="true"><use href="#i-users"/></svg>
+              <button id="onlineToggle" class="icon-btn" title="Mostrar/ocultar usuarios conectados" aria-label="Mostrar u ocultar la lista de usuarios conectados" aria-pressed="false" aria-controls="onlinePanel">
+                <svg class="ic" aria-hidden="true"><use href="#i-panel-right"/></svg>
               </button>
             </div>
           </header>
@@ -410,8 +412,11 @@
     <!--
       Pusher es cliente WebSocket; si la API no está configurada el app cae a
       polling automáticamente, así que cargarlo defer no rompe nada.
+      Twemoji se sirve local (CSP script-src 'self') y reemplaza emojis nativos
+      por SVGs estilo Twitter/Discord, consistentes en todas las plataformas.
     -->
     <script src="https://js.pusher.com/8.4/pusher.min.js" defer></script>
+    <script src="/vendor/twemoji.min.js?v=__ASSET_V__" defer></script>
     <script src="/js/app.js?v=__ASSET_V__" defer></script>
   </body>
 </html>
