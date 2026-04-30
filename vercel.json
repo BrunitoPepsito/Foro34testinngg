@@ -16,6 +16,7 @@
     { "src": "/clips", "dest": "/api/index.js" },
     { "src": "/clips/(.*)", "dest": "/api/index.js" },
     { "src": "/u/(.*)", "dest": "/api/index.js" },
+    { "src": "/invite/(.*)", "dest": "/api/index.js" },
     { "src": "/", "dest": "/api/index.js" },
     { "src": "/(.*)", "dest": "/api/index.js" }
   ]

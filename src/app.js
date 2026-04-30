@@ -131,7 +131,7 @@ function createApp() {
 
   // Render index.html for SPA routes with cache-busting stamp injected.
   const indexPath = path.join(publicDir, 'index.html');
-  app.get(['/', '/login', '/register', '/profile', '/clips', '/clips/:id', '/u/:username'], (_req, res) => {
+  app.get(['/', '/login', '/register', '/profile', '/clips', '/clips/:id', '/u/:username', '/invite/:code'], (_req, res) => {
     let html;
     try {
       html = fs.readFileSync(indexPath, 'utf8');

@@ -148,7 +148,13 @@
     if (p === '/profile') return '/profile';
     if (p.startsWith('/u/')) return '/profile';
     if (p === '/clips' || p.startsWith('/clips/')) return '/clips';
+    if (p.startsWith('/invite/')) return '/invite';
     return '/';
+  }
+  function inviteCodeFromPath() {
+    const p = location.pathname;
+    if (!p.startsWith('/invite/')) return '';
+    return p.slice('/invite/'.length).split(/[?#/]/)[0];
   }
 
   function render() {
@@ -161,6 +167,7 @@
     if (route === '/') initChatView();
     if (route === '/clips') initClipsView();
     if (route === '/profile') renderProfileView();
+    if (route === '/invite') openInvitePreview(inviteCodeFromPath());
   }
 
   // ----- Auth UI -----
@@ -838,6 +845,13 @@
           if (ti) { ti.classList.add('hidden'); ti.innerHTML = ''; }
           appendMessage(data.botReply);
         }
+        // UbreBot is the AI bot; if Pusher delivered it before us, appendMessage
+        // dedupes via state.seen so this is safe.
+        if (data && data.ubreReply) {
+          const ti = $('#typingIndicator');
+          if (ti) { ti.classList.add('hidden'); ti.innerHTML = ''; }
+          appendMessage(data.ubreReply);
+        }
         // Track our own anon owner for self-recognition (own-message styling).
         if (data && data.message && data.message.anonOwner) {
           state.myAnonId = data.message.anonOwner;
@@ -937,6 +951,7 @@
         loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        await consumePendingInvite();
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -964,6 +979,7 @@
         loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        await consumePendingInvite();
         go('/');
       } catch (err) {
         errorEl.textContent = err.message;
@@ -1060,7 +1076,11 @@
     const shareRow = isMe ? `
       <div class="profile-share-row">
         <button class="btn btn-ghost btn-sm" id="copyProfileLink"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace</button>
-      </div>` : '';
+      </div>` : (state.me ? `
+      <div class="profile-share-row">
+        <button class="btn btn-primary btn-sm" id="profileSendDmBtn"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-message"/></svg> Enviar DM</button>
+        <button class="btn btn-ghost btn-sm" id="copyProfileLink"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace</button>
+      </div>` : '');
 
     container.innerHTML = `
       <div class="${profileClass}" style="${styleVars}">
@@ -1141,16 +1161,25 @@
       if (avatarIn) avatarIn.addEventListener('change', (e) => uploadProfileMedia(e.target, 'avatar'));
       const bannerIn = $('#bannerInput');
       if (bannerIn) bannerIn.addEventListener('change', (e) => uploadProfileMedia(e.target, 'banner'));
-      const copyBtn = $('#copyProfileLink');
-      if (copyBtn) {
-        copyBtn.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
-            copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-check"/></svg> Copiado';
-            setTimeout(() => { copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace'; }, 1200);
-          } catch (_e) { /* ignore */ }
-        });
-      }
+    }
+    const copyBtn = $('#copyProfileLink');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
+          copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-check"/></svg> Copiado';
+          setTimeout(() => { copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace'; }, 1200);
+        } catch (_e) { /* ignore */ }
+      });
+    }
+    const dmBtn = $('#profileSendDmBtn');
+    if (dmBtn) {
+      dmBtn.addEventListener('click', async () => {
+        try {
+          await openDm(user.username);
+          await loadDms();
+        } catch (e) { alert('Error: ' + e.message); }
+      });
     }
     handleSpotifyCallbackToast();
   }
@@ -1688,14 +1717,8 @@
     if (!state.activeServer) { wrap.classList.add('hidden'); return; }
     wrap.classList.remove('hidden');
     $('#activeServerName').textContent = state.activeServer.name;
-    const inv = $('#inviteCode');
-    if (inv) {
-      inv.textContent = state.activeServer.inviteCode || '';
-      inv.onclick = () => {
-        if (!state.activeServer.inviteCode) return;
-        navigator.clipboard.writeText(state.activeServer.inviteCode).then(() => flashToast('C\u00f3digo copiado'));
-      };
-    }
+    const inviteBtn = $('#inviteShareBtn');
+    if (inviteBtn) inviteBtn.onclick = () => openInviteShareModal(state.activeServer);
     const channels = state.activeServer.channels || [];
     const wrap2 = $('#channels');
     wrap2.innerHTML = channels.map((c) => `<div class="channel-row ${c.id === state.activeChannel ? 'active' : ''}" data-channel="${escapeHTML(c.id)}"><span class="hash">#</span> ${escapeHTML(c.name)}</div>`).join('');
@@ -1775,26 +1798,185 @@
       pres.bind('client-typing', (data) => showTyping(data && data.displayName));
     }
   }
+  // ----- Modal helpers -----
+  function showModal(id) {
+    const m = $(id);
+    if (m) m.classList.remove('hidden');
+  }
+  function hideModal(id) {
+    const m = $(id);
+    if (m) m.classList.add('hidden');
+  }
+  function bindModalDismiss(backdropId, closeBtnId) {
+    const backdrop = $(backdropId);
+    const close = $(closeBtnId);
+    if (close) close.onclick = () => hideModal(backdropId);
+    if (backdrop) backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) hideModal(backdropId);
+    });
+  }
+
   function openServerCreateModal() {
     if (!state.me) { alert('Inicia sesi\u00f3n para crear / unirte a un server'); return; }
-    const choice = prompt('1) Crear nuevo server\n2) Unirme con c\u00f3digo de invitaci\u00f3n\n\nElige 1 o 2:');
-    if (choice === '1') {
-      const name = prompt('Nombre del server:');
-      if (!name) return;
-      const icon = prompt('Icono (1 emoji o letra, opcional):') || '';
-      api('/api/servers', { method: 'POST', body: { name, icon } })
-        .then((r) => { state.servers.push(r.server); switchServer(r.server.id); })
-        .catch((e) => alert('Error: ' + e.message));
-    } else if (choice === '2') {
-      const code = prompt('C\u00f3digo de invitaci\u00f3n:');
-      if (!code) return;
-      api('/api/servers/join', { method: 'POST', body: { code } })
-        .then((r) => {
-          if (!state.servers.some((s) => s.id === r.server.id)) state.servers.push(r.server);
-          switchServer(r.server.id);
-        })
-        .catch((e) => alert('Error: ' + e.message));
+    const setActiveTab = (which) => {
+      $$('#serverModal .modal-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === which));
+      $$('#serverModal .modal-tab-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== which));
+    };
+    setActiveTab('create');
+    $$('#serverModal .modal-tab').forEach((b) => b.onclick = () => setActiveTab(b.dataset.tab));
+    const nameI = $('#srvCreateName'); if (nameI) nameI.value = '';
+    const iconI = $('#srvCreateIcon'); if (iconI) iconI.value = '';
+    const codeI = $('#srvJoinCode'); if (codeI) codeI.value = '';
+    const cErr = $('#srvCreateError'); if (cErr) cErr.textContent = '';
+    const jErr = $('#srvJoinError'); if (jErr) jErr.textContent = '';
+    const cBtn = $('#srvCreateBtn');
+    if (cBtn) cBtn.onclick = async () => {
+      const name = (nameI && nameI.value || '').trim();
+      const icon = (iconI && iconI.value || '').trim();
+      if (!name) { if (cErr) cErr.textContent = 'Pon\u00e9 un nombre'; return; }
+      cBtn.disabled = true;
+      try {
+        const r = await api('/api/servers', { method: 'POST', body: { name, icon } });
+        state.servers.push(r.server);
+        hideModal('#serverModal');
+        switchServer(r.server.id);
+        // Open the invite-share modal so the user can immediately share the link.
+        setTimeout(() => openInviteShareModal(r.server), 200);
+      } catch (e) { if (cErr) cErr.textContent = 'Error: ' + e.message; }
+      cBtn.disabled = false;
+    };
+    const jBtn = $('#srvJoinBtn');
+    if (jBtn) jBtn.onclick = async () => {
+      const code = (codeI && codeI.value || '').trim();
+      if (!code) { if (jErr) jErr.textContent = 'Pon\u00e9 el c\u00f3digo o link'; return; }
+      jBtn.disabled = true;
+      try {
+        const r = await api('/api/servers/join', { method: 'POST', body: { code } });
+        if (!state.servers.some((s) => s.id === r.server.id)) state.servers.push(r.server);
+        hideModal('#serverModal');
+        switchServer(r.server.id);
+        flashToast(`Te uniste a ${r.server.name}`);
+      } catch (e) { if (jErr) jErr.textContent = 'Error: ' + e.message; }
+      jBtn.disabled = false;
+    };
+    bindModalDismiss('#serverModal', '#serverModalClose');
+    showModal('#serverModal');
+    setTimeout(() => nameI && nameI.focus(), 50);
+  }
+
+  function openInviteShareModal(server) {
+    if (!server || !server.inviteCode) {
+      flashToast('Este server no tiene invitaci\u00f3n');
+      return;
     }
+    const url = `${location.origin}/invite/${server.inviteCode}`;
+    const nameEl = $('#inviteShareName'); if (nameEl) nameEl.textContent = server.name;
+    const urlEl = $('#inviteShareUrl'); if (urlEl) urlEl.value = url;
+    const codeEl = $('#inviteShareCode'); if (codeEl) codeEl.textContent = server.inviteCode;
+    const copyBtn = $('#inviteShareCopyBtn');
+    if (copyBtn) copyBtn.onclick = () => {
+      if (urlEl) { urlEl.select(); urlEl.setSelectionRange(0, 999); }
+      navigator.clipboard.writeText(url)
+        .then(() => flashToast('Link copiado'))
+        .catch(() => flashToast('No se pudo copiar'));
+    };
+    const nativeBtn = $('#inviteShareNativeBtn');
+    if (nativeBtn) {
+      const canShare = typeof navigator.share === 'function';
+      nativeBtn.style.display = canShare ? '' : 'none';
+      nativeBtn.onclick = () => {
+        navigator.share({ title: `Únete a ${server.name}`, text: `Te invito a ${server.name} en Foro34`, url })
+          .catch(() => {});
+      };
+    }
+    const waBtn = $('#inviteShareWhatsappBtn');
+    if (waBtn) waBtn.onclick = () => {
+      const text = encodeURIComponent(`Te invito a ${server.name} en Foro34: ${url}`);
+      window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener');
+    };
+    bindModalDismiss('#inviteShareModal', '#inviteShareClose');
+    showModal('#inviteShareModal');
+  }
+
+  async function openInvitePreview(code) {
+    bindModalDismiss('#invitePreviewModal');
+    const content = $('#invitePreviewContent');
+    if (!content) return;
+    content.innerHTML = '<p class="muted" style="text-align:center;padding:20px">Cargando…</p>';
+    showModal('#invitePreviewModal');
+    let invite = null;
+    try {
+      const r = await api(`/api/servers/invite/${encodeURIComponent(code)}`);
+      invite = r.invite;
+    } catch (e) {
+      content.innerHTML = `
+        <div class="invite-preview-error">
+          <h3>Invitación no válida</h3>
+          <p class="muted">El link expiró o ya no existe.</p>
+          <button class="btn btn-primary" id="invitePreviewBack">Volver al inicio</button>
+        </div>`;
+      const back = $('#invitePreviewBack');
+      if (back) back.onclick = () => { hideModal('#invitePreviewModal'); go('/', true); };
+      return;
+    }
+    if (!state.me) {
+      content.innerHTML = `
+        <div class="invite-preview-card">
+          <div class="invite-preview-icon">${escapeHTML(invite.icon || invite.name.charAt(0).toUpperCase())}</div>
+          <h3>${escapeHTML(invite.name)}</h3>
+          <p class="muted"><strong>${invite.memberCount}</strong> miembro${invite.memberCount === 1 ? '' : 's'} · <strong>${invite.channelCount}</strong> canal${invite.channelCount === 1 ? '' : 'es'}</p>
+          <p>Iniciá sesión o creá una cuenta para unirte.</p>
+          <div class="invite-preview-actions">
+            <button class="btn btn-primary" id="invitePreviewLogin">Iniciar sesión</button>
+            <button class="btn btn-ghost" id="invitePreviewRegister">Crear cuenta</button>
+          </div>
+        </div>`;
+      const login = $('#invitePreviewLogin');
+      const reg = $('#invitePreviewRegister');
+      // Stash the code so we auto-join after auth.
+      try { sessionStorage.setItem('pendingInviteCode', code); } catch (_) { /* sessionStorage unavailable */ }
+      if (login) login.onclick = () => { hideModal('#invitePreviewModal'); go('/login'); };
+      if (reg) reg.onclick = () => { hideModal('#invitePreviewModal'); go('/register'); };
+      return;
+    }
+    // Already a member?
+    const existing = state.servers.find((s) => s.id === invite.serverId);
+    if (existing) {
+      hideModal('#invitePreviewModal');
+      switchServer(existing.id);
+      go('/', true);
+      flashToast(`Ya sos miembro de ${invite.name}`);
+      return;
+    }
+    content.innerHTML = `
+      <div class="invite-preview-card">
+        <div class="invite-preview-icon">${escapeHTML(invite.icon || invite.name.charAt(0).toUpperCase())}</div>
+        <h3>${escapeHTML(invite.name)}</h3>
+        <p class="muted"><strong>${invite.memberCount}</strong> miembro${invite.memberCount === 1 ? '' : 's'} · <strong>${invite.channelCount}</strong> canal${invite.channelCount === 1 ? '' : 'es'}</p>
+        <div class="invite-preview-actions">
+          <button class="btn btn-primary" id="invitePreviewJoin">Unirme</button>
+          <button class="btn btn-ghost" id="invitePreviewCancel">Cancelar</button>
+        </div>
+        <p class="form-error" id="invitePreviewError"></p>
+      </div>`;
+    const cancel = $('#invitePreviewCancel');
+    if (cancel) cancel.onclick = () => { hideModal('#invitePreviewModal'); go('/', true); };
+    const join = $('#invitePreviewJoin');
+    if (join) join.onclick = async () => {
+      join.disabled = true;
+      try {
+        const r = await api('/api/servers/join', { method: 'POST', body: { code } });
+        if (!state.servers.some((s) => s.id === r.server.id)) state.servers.push(r.server);
+        hideModal('#invitePreviewModal');
+        switchServer(r.server.id);
+        go('/', true);
+        flashToast(`Te uniste a ${r.server.name}`);
+      } catch (e) {
+        const err = $('#invitePreviewError');
+        if (err) err.textContent = 'Error: ' + e.message;
+        join.disabled = false;
+      }
+    };
   }
   function openCreateChannelPrompt() {
     if (!state.activeServer) return;
@@ -1875,15 +2057,90 @@
   }
   function setupDmControls() {
     const btn = $('#newDmBtn');
-    if (btn) btn.addEventListener('click', async () => {
-      const q = prompt('Username de la persona:');
-      if (!q) return;
+    if (btn) btn.addEventListener('click', () => openDmPicker());
+  }
+
+  // Live-search modal to start a DM. Replaces the old prompt() flow with a
+  // proper picker that hits /api/users?q=... so users don't need to know the
+  // exact username up front.
+  function openDmPicker() {
+    if (!state.me) { alert('Inicia sesi\u00f3n para enviar DMs'); return; }
+    const input = $('#dmPickerInput');
+    const results = $('#dmPickerResults');
+    if (!input || !results) return;
+    input.value = '';
+    results.innerHTML = '<p class="muted" style="padding:14px;text-align:center">Empez\u00e1 a escribir un username…</p>';
+    let lastQuery = '';
+    let debounceT = null;
+    const runSearch = async (q) => {
+      if (q === lastQuery) return;
+      lastQuery = q;
+      if (q.length < 2) {
+        results.innerHTML = '<p class="muted" style="padding:14px;text-align:center">Escrib\u00ed al menos 2 letras…</p>';
+        return;
+      }
       try {
-        await api(`/api/dms/with/${encodeURIComponent(q.trim().toLowerCase())}`, { method: 'POST' });
-        await openDm(q.trim().toLowerCase());
-        await loadDms();
-      } catch (e) { alert('Error: ' + e.message); }
-    });
+        const r = await api(`/api/users?q=${encodeURIComponent(q)}`);
+        const users = (r.users || []).filter((u) => u.username !== (state.me && state.me.username));
+        if (!users.length) {
+          results.innerHTML = '<p class="muted" style="padding:14px;text-align:center">Sin resultados</p>';
+          return;
+        }
+        results.innerHTML = users.map((u) => {
+          const av = u.avatarUrl
+            ? `<img src="${escapeHTML(u.avatarUrl)}" alt="" />`
+            : escapeHTML((u.displayName || u.username || '?').charAt(0).toUpperCase());
+          return `<button class="dm-picker-row" data-username="${escapeHTML(u.username)}">
+            <span class="av" style="background:${escapeHTML(u.color || '#7c5cff')}">${av}</span>
+            <span class="info">
+              <span class="name">${escapeHTML(u.displayName || u.username)}</span>
+              <span class="handle muted">@${escapeHTML(u.username)}</span>
+            </span>
+          </button>`;
+        }).join('');
+        results.querySelectorAll('.dm-picker-row').forEach((row) => {
+          row.addEventListener('click', async () => {
+            const uname = row.dataset.username;
+            try {
+              await openDm(uname);
+              await loadDms();
+              hideModal('#dmPickerModal');
+            } catch (e) { alert('Error: ' + e.message); }
+          });
+        });
+        // Avatars that 404 should not blast a broken-image icon (CSP-safe).
+        results.querySelectorAll('.dm-picker-row .av img').forEach((img) => {
+          img.onerror = () => { img.style.display = 'none'; };
+        });
+      } catch (e) {
+        results.innerHTML = `<p class="form-error" style="padding:14px;text-align:center">${escapeHTML(e.message)}</p>`;
+      }
+    };
+    input.oninput = () => {
+      const q = input.value.trim().toLowerCase();
+      clearTimeout(debounceT);
+      debounceT = setTimeout(() => runSearch(q), 200);
+    };
+    bindModalDismiss('#dmPickerModal', '#dmPickerClose');
+    showModal('#dmPickerModal');
+    setTimeout(() => input.focus(), 50);
+  }
+
+  // After login/register, if the user clicked a /invite/<code> link before
+  // authenticating, finalize the join silently.
+  async function consumePendingInvite() {
+    let code = '';
+    try { code = sessionStorage.getItem('pendingInviteCode') || ''; } catch (_) { return; }
+    if (!code) return;
+    try { sessionStorage.removeItem('pendingInviteCode'); } catch (_) { /* sessionStorage unavailable */ }
+    try {
+      const r = await api('/api/servers/join', { method: 'POST', body: { code } });
+      if (!state.servers.some((s) => s.id === r.server.id)) state.servers.push(r.server);
+      switchServer(r.server.id);
+      flashToast(`Te uniste a ${r.server.name}`);
+    } catch (e) {
+      flashToast('No pude unirte: ' + e.message);
+    }
   }
 
   // ----- Stickers -----
