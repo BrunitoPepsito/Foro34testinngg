@@ -1977,3 +1977,102 @@ body { font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
   border-radius: 4px !important;
   box-shadow: none !important;
 }
+
+/* =====================================================================
+   v4.1 — Producción: logo "34", a11y helpers y polish minimalista.
+   Estilo objetivo: YouTube + Discord + Twitch + Kick, todo plano y oscuro.
+   ===================================================================== */
+
+/* skip link para teclado / lectores de pantalla */
+.skip-link {
+  position: fixed;
+  top: -100px; left: 8px;
+  z-index: 9999;
+  padding: 10px 14px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--t);
+}
+.skip-link:focus { top: 8px; outline: 2px solid #fff; outline-offset: 2px; }
+
+/* aviso si no hay JS */
+.noscript-banner {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 9999;
+  padding: 12px 16px;
+  background: var(--danger);
+  color: #fff;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* sprite SVG inline: lo escondemos pero accesible */
+.svg-sprite { position: absolute; pointer-events: none; }
+
+/* ---- Marca: logo "34" minimalista ---------------------------------- */
+.brand { padding: 14px 16px 12px; }
+.brand-link {
+  display: flex; align-items: center; gap: 12px;
+  color: inherit; text-decoration: none;
+  font-weight: 800; font-size: 18px;
+  letter-spacing: -.4px;
+  border-radius: 10px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  transition: background var(--t-fast);
+}
+.brand-link:hover { background: var(--surface-hover); text-decoration: none; }
+.brand-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.brand-logo {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: transparent;     /* el gradiente ahora vive dentro del SVG */
+  box-shadow: none;
+  padding: 0;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.brand-logo svg {
+  width: 100%; height: 100%;
+  display: block;
+}
+.brand-logo .brand-logo-bg {
+  fill: var(--primary);
+}
+
+/* nombre de marca: tipografía compacta, sin gradiente */
+.brand-name {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--text) !important;
+  font-weight: 800;
+  letter-spacing: -.3px;
+}
+
+/* ---- Imagen redimensionada para servers cuando son fotos ---------- */
+.server-icon img { display: block; }
+
+/* ---- Polish minimalista global ------------------------------------- */
+.view-head h1 { letter-spacing: -.2px; font-weight: 700; }
+.badge { letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+
+/* botón primary más cerca del estilo "live now" tipo Twitch/Kick */
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: none;
+}
+.btn-primary:hover { background: var(--primary-2); }
+
+/* en mobile, el menú lateral ya estaba; aseguramos que el botón
+   no se solape con la cabecera del chat */
+@media (max-width: 760px) {
+  .brand { padding: 10px 16px; }
+  .brand-link { font-size: 17px; }
+  .brand-logo { width: 32px; height: 32px; }
+}
