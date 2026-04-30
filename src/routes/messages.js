@@ -217,6 +217,7 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
 
     // Resolve replyTo snapshot
     let replyTo = null;
+    let replyingToBot = false;
     if (replyToId) {
       try {
         const orig = await Message.findById(replyToId).lean();
@@ -228,6 +229,9 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
             snippet: (orig.text || '').slice(0, 140),
             snippetImage: orig.imageUrl || '',
           };
+          if (orig.author && orig.author.username === ubrebot.UBREBOT_USERNAME) {
+            replyingToBot = true;
+          }
         }
       } catch (_e) { /* ignore bad ids */ }
     }
@@ -317,7 +321,9 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
     }
 
     // UbreBot trigger — runs before the static command bot.
-    if (userPayload && ubrebot.isMentioned(modText)) {
+    // Also fires when the user is *replying* to a UbreBot message, so they
+    // can keep the conversation going with one tap (no need to type @UbreBot).
+    if (userPayload && (ubrebot.isMentioned(modText) || replyingToBot)) {
       const prompt = ubrebot.stripMention(modText);
       // Tell the room UbreBot is "typing" so the UI shows the indicator immediately.
       broadcast(`room-${room}`, 'bot:typing', { botName: 'UbreBot', at: Date.now() }).catch(() => {});

@@ -358,7 +358,25 @@
     const a = m.author || {};
     if (!a.anonymous && a.username) {
       const nameEl = wrap.querySelector('.msg-name');
-      if (nameEl) nameEl.addEventListener('click', () => go(`/u/${a.username}`));
+      if (nameEl) {
+        // Bot: clicking the name inserts a mention into the composer
+        // (so users can talk to UbreBot with one tap, without typing @).
+        if (a.bot || a.username === 'ubrebot') {
+          nameEl.title = 'Mencionar a UbreBot';
+          nameEl.addEventListener('click', () => insertMention(a.displayName || 'UbreBot'));
+        } else {
+          nameEl.addEventListener('click', () => go(`/u/${a.username}`));
+        }
+      }
+      // Bot avatar also inserts the mention.
+      if (a.bot || a.username === 'ubrebot') {
+        const av = wrap.querySelector('.msg-avatar');
+        if (av) {
+          av.style.cursor = 'pointer';
+          av.title = 'Mencionar a UbreBot';
+          av.addEventListener('click', () => insertMention(a.displayName || 'UbreBot'));
+        }
+      }
     }
     const img = wrap.querySelector('.msg-image');
     if (img) img.addEventListener('click', () => window.open(m.imageUrl, '_blank'));
@@ -460,7 +478,32 @@
     state.replyTo = m;
     state.editing = null;
     showComposerBanner();
-    $('#textInput').focus();
+    const ti = $('#textInput');
+    // If replying to UbreBot, prefix the mention so the bot actually sees it
+    // and answers. (Bot replies are gated by isMentioned() server-side.)
+    const a = m && m.author;
+    if (ti && a && (a.bot || a.username === 'ubrebot')) {
+      const cur = ti.value || '';
+      if (!/(^|\s)@ubrebot\b/i.test(cur)) {
+        ti.value = ('@UbreBot ' + cur).trimStart();
+      }
+    }
+    if (ti) {
+      ti.focus();
+      try { ti.setSelectionRange(ti.value.length, ti.value.length); } catch (_) { /* noop */ }
+    }
+  }
+  function insertMention(displayName) {
+    const ti = $('#textInput');
+    if (!ti) return;
+    const handle = (displayName || 'UbreBot').replace(/\s+/g, '');
+    const token = '@' + handle + ' ';
+    const cur = ti.value || '';
+    // If the same mention already at the start, just focus.
+    const re = new RegExp('(^|\\s)@' + handle + '\\b', 'i');
+    if (!re.test(cur)) ti.value = (token + cur).trimStart();
+    ti.focus();
+    try { ti.setSelectionRange(ti.value.length, ti.value.length); } catch (_) { /* noop */ }
   }
   function startEdit(m) {
     state.editing = m;
