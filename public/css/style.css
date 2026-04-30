@@ -2230,3 +2230,59 @@ img.emoji {
 @media (max-width: 420px) {
   .server-rail { display: none; }
 }
+
+/* ============================================================
+   v4.3 — Mobile drawer fixes
+   Old ≤720px rules turned the sidebar into a horizontal top-bar
+   (flex-direction: row + overflow: visible), which conflicted
+   with the newer ≤760px drawer (position: fixed + transform).
+   Result: sidebar children (nav, auth-card) spilled into the
+   visible viewport on top of the chat/composer.
+   These overrides re-establish a proper column drawer.
+   ============================================================ */
+@media (max-width: 760px) {
+  .sidebar {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 18px 14px !important;
+    gap: 12px !important;
+    border-bottom: none !important;
+    border-right: 1px solid var(--border) !important;
+    background: var(--bg-2);
+  }
+  .sidebar-foot { display: block; }
+  .auth-anon p { display: block; }
+  .auth-anon { display: flex; flex-direction: column; gap: 8px; }
+  .auth-card {
+    margin: auto 0 0 0 !important;
+    flex-direction: column !important;
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+    gap: 8px !important;
+  }
+  .auth-card .row {
+    flex-direction: row !important;
+    gap: 8px !important;
+    flex-wrap: wrap;
+  }
+  .auth-card .row .btn { flex: 1 1 auto; min-width: 120px; }
+  .nav { flex-direction: column !important; gap: 4px !important; }
+  .nav-btn {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 10px 12px !important;
+    font-size: 14px !important;
+  }
+  .brand { font-size: inherit !important; gap: 10px !important; }
+  /* Composer always visible above mobile keyboard */
+  .composer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+}
