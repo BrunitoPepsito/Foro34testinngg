@@ -24,6 +24,7 @@
     activeDm: null,       // { room, with: {...} } when in a DM
     stickers: [],         // user's stickers
     voice: { recorder: null, chunks: [], started: 0, stream: null, timerId: 0 },
+    profileEditing: false,        // when true, profile shows the edit panel
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -1019,8 +1020,10 @@
       `--banner-bg:${bannerBg};` +
       (user.bannerUrl ? `--banner-image:url('${user.bannerUrl.replace(/'/g, "\\'")}');` : '');
 
+    const editing = isMe && state.profileEditing;
+    if (!isMe) state.profileEditing = false;
     const bannerClass = user.bannerUrl ? 'profile-banner has-image' : 'profile-banner';
-    const profileClass = `profile effect-${effect}`;
+    const profileClass = `profile effect-${effect}${editing ? ' is-editing' : ''}`;
 
     const avatarTag = `<img class="profile-avatar" src="${escapeHTML(user.avatarUrl || avatarFallback(user.displayName))}" alt="" />`;
     const avatarFrameClasses = `avatar-frame ${decoration !== 'none' ? `deco-wrap deco-${decoration}` : ''}`;
@@ -1040,15 +1043,35 @@
     const memberSince = user.createdAt ? new Date(user.createdAt) : null;
     const memberSinceLabel = memberSince ? memberSince.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
 
+    const editToggleBtn = isMe ? `
+      <button class="btn ${editing ? '' : 'btn-primary'} profile-edit-toggle" id="profileEditToggle">
+        <svg class="ic ic-sm" aria-hidden="true"><use href="#${editing ? 'i-eye' : 'i-edit'}"/></svg>
+        ${editing ? 'Volver al perfil' : 'Editar perfil'}
+      </button>` : '';
+
+    const bannerEditOverlay = (isMe && editing)
+      ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>`
+      : '';
+
+    const avatarEditOverlay = (isMe && editing)
+      ? `<label class="avatar-edit-fab" for="avatarInput" title="Cambiar foto"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg><input type="file" id="avatarInput" accept="image/*,image/gif" class="file-input" /></label>`
+      : '';
+
+    const shareRow = isMe ? `
+      <div class="profile-share-row">
+        <button class="btn btn-ghost btn-sm" id="copyProfileLink"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace</button>
+      </div>` : '';
+
     container.innerHTML = `
       <div class="${profileClass}" style="${styleVars}">
+        ${editToggleBtn}
         <div class="${bannerClass}">
           <div class="profile-banner-aura" aria-hidden="true"></div>
-          ${isMe ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>` : ''}
+          ${bannerEditOverlay}
         </div>
         <div class="profile-head">
           <div class="avatar-halo ${decoration !== 'none' ? `deco-halo-${decoration}` : ''}">
-            <div class="${avatarFrameClasses}">${avatarTag}</div>
+            <div class="${avatarFrameClasses}">${avatarTag}${avatarEditOverlay}</div>
           </div>
           <div class="profile-info">
             ${user.title ? `<div class="title-badge"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg>${escapeHTML(user.title)}</div>` : ''}
@@ -1062,11 +1085,7 @@
             ${statusHtml}
           </div>
         </div>
-        ${isMe ? `<div class="profile-actions">
-          <label class="btn btn-primary" for="avatarInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar foto</label>
-          <input type="file" id="avatarInput" accept="image/*,image/gif" class="file-input" />
-          <button class="btn" id="copyProfileLink"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace</button>
-        </div>` : ''}
+        ${shareRow}
         <div class="profile-bio">${bioHtml}</div>
         ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
         <div class="profile-stats-grid">
@@ -1083,16 +1102,55 @@
         </div>
         <div id="pinnedSection" class="profile-pins"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-pin"/></svg> Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
         <div id="achievementsSection" class="profile-achievements"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg> Logros</h3><div id="achievementsGrid" class="achievement-grid"></div></div>
-        ${isMe ? renderEditor(user) : ''}
+        ${editing ? renderEditor(user) : ''}
       </div>`;
     tw(container);
+
+    // CSP-safe image fallbacks: hide BS CDN images that fail to load. Inline
+    // onerror= attributes would be silently dropped by our CSP (no
+    // 'unsafe-inline' on script-src).
+    container.querySelectorAll('img.bs-player-icon, img.bs-brawler-img').forEach((img) => {
+      img.onerror = () => { img.style.display = 'none'; };
+    });
+
+    if (isMe) {
+      const editBtn = $('#profileEditToggle');
+      if (editBtn) editBtn.addEventListener('click', () => {
+        state.profileEditing = !state.profileEditing;
+        renderProfileView();
+        if (state.profileEditing) {
+          // scroll editor into view so it's obvious where to edit
+          setTimeout(() => {
+            const ed = $('.profile-section');
+            if (ed) ed.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 0);
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+    }
 
     loadPinnedMessages(user.username).catch(() => {});
     renderAchievements(user);
     loadSpotifyNowPlaying(user.username).catch(() => {});
     if (isMe) {
-      wireEditor(user);
+      if (editing) wireEditor(user);
       wireIntegrations();
+      // Avatar / banner inputs only exist while editing.
+      const avatarIn = $('#avatarInput');
+      if (avatarIn) avatarIn.addEventListener('change', (e) => uploadProfileMedia(e.target, 'avatar'));
+      const bannerIn = $('#bannerInput');
+      if (bannerIn) bannerIn.addEventListener('change', (e) => uploadProfileMedia(e.target, 'banner'));
+      const copyBtn = $('#copyProfileLink');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
+            copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-check"/></svg> Copiado';
+            setTimeout(() => { copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace'; }, 1200);
+          } catch (_e) { /* ignore */ }
+        });
+      }
     }
     handleSpotifyCallbackToast();
   }
@@ -1125,7 +1183,7 @@
       if (!isMe) return '';
       return `<div class="integ-card integ-bs is-empty">
         <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg><span>Brawl Stars</span></div>
-        <p class="muted" style="margin:6px 0 12px">Pegá tu tag (ej: <code>#YYY1234</code>) para mostrar tus trofeos y club.</p>
+        <p class="muted" style="margin:6px 0 12px">Pegá tu tag (ej: <code>#YYY1234</code>) para mostrar tus trofeos, club y mejores brawlers.</p>
         <form id="bsConnectForm" class="bs-connect-row">
           <input type="text" id="bsTagInput" placeholder="#YOURTAG" maxlength="16" autocomplete="off" />
           <button class="btn btn-bs" type="submit"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-gamepad"/></svg> Conectar</button>
@@ -1134,22 +1192,66 @@
       </div>`;
     }
     const trophyPct = bs.highestTrophies > 0 ? Math.min(100, Math.round((bs.trophies / bs.highestTrophies) * 100)) : 0;
+    const playerIcon = bs.iconId
+      ? `<img class="bs-player-icon" src="https://cdn.brawlify.com/profile-icons/regular/${bs.iconId}.png" alt="" loading="lazy" />`
+      : `<div class="bs-player-icon bs-icon-fallback"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg></div>`;
+
+    const topBrawlers = Array.isArray(bs.topBrawlers) ? bs.topBrawlers : [];
+    const topBrawlersHtml = topBrawlers.slice(0, 3).map((b, i) => {
+      const slug = String(b.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const img = slug
+        ? `<img class="bs-brawler-img" src="https://cdn.brawlify.com/brawlers/borderless/${slug}.png" alt="" loading="lazy" />`
+        : '';
+      const rankBadge = b.rank ? `<span class="bs-brawler-rank" data-rank="${Math.min(35, b.rank)}">R${b.rank}</span>` : '';
+      const medal = ['gold', 'silver', 'bronze'][i] || '';
+      return `<div class="bs-brawler-card ${medal ? `is-${medal}` : ''}">
+        <div class="bs-brawler-medal">${i + 1}</div>
+        <div class="bs-brawler-img-wrap">${img}</div>
+        <div class="bs-brawler-name">${escapeHTML(b.name || '?')}</div>
+        <div class="bs-brawler-meta">
+          <span class="bs-brawler-trophies"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg>${b.trophies}</span>
+          <span class="bs-brawler-power" title="Power level">⚡${b.power}</span>
+        </div>
+        ${rankBadge}
+      </div>`;
+    }).join('');
+
+    const clubHtml = bs.club && bs.club.name
+      ? `<div class="bs-club">
+          <svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield"/></svg>
+          <span class="bs-club-label">Club</span>
+          <strong>${escapeHTML(bs.club.name)}</strong>
+        </div>`
+      : '';
+
     return `<div class="integ-card integ-bs">
       <div class="integ-head"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg><span>Brawl Stars</span>
         <span class="integ-badge">${escapeHTML(bs.tag)}</span>
       </div>
       <div class="integ-body">
-        <div class="bs-name">${escapeHTML(bs.name || '')}</div>
+        <div class="bs-hero">
+          <div class="bs-hero-icon">${playerIcon}<span class="bs-hero-level">Lv ${bs.expLevel}</span></div>
+          <div class="bs-hero-info">
+            <div class="bs-name">${escapeHTML(bs.name || '')}</div>
+            <div class="bs-hero-trophies">
+              <svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg>
+              <span class="bs-hero-trophies-num">${bs.trophies.toLocaleString('es-MX')}</span>
+              <span class="bs-hero-trophies-label">trofeos</span>
+            </div>
+            <div class="bs-progress" title="Trofeos actuales / récord histórico">
+              <div class="bs-progress-bar" style="width:${trophyPct}%"></div>
+              <div class="bs-progress-meta"><span>${bs.trophies.toLocaleString('es-MX')}</span><span>récord ${bs.highestTrophies.toLocaleString('es-MX')}</span></div>
+            </div>
+          </div>
+        </div>
+        ${topBrawlersHtml ? `<div class="bs-top-brawlers"><div class="bs-section-title">Top brawlers</div><div class="bs-brawlers-row">${topBrawlersHtml}</div></div>` : ''}
         <div class="bs-stats">
-          <div class="bs-stat"><div class="bs-stat-num">${bs.trophies}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg>Trofeos</div></div>
-          <div class="bs-stat"><div class="bs-stat-num">${bs.highestTrophies}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-flame"/></svg>Récord</div></div>
           <div class="bs-stat"><div class="bs-stat-num">${bs.brawlersUnlocked}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield"/></svg>Brawlers</div></div>
-          <div class="bs-stat"><div class="bs-stat-num">${bs.expLevel}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg>Nivel</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.threeVsThreeVictories || 0}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-flame"/></svg>3v3</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.soloVictories || 0}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg>Solo</div></div>
+          <div class="bs-stat"><div class="bs-stat-num">${bs.duoVictories || 0}</div><div class="bs-stat-label"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-message"/></svg>Dúo</div></div>
         </div>
-        <div class="bs-progress" title="Trofeos actuales / récord histórico">
-          <div class="bs-progress-bar" style="width:${trophyPct}%"></div>
-        </div>
-        ${bs.club && bs.club.name ? `<div class="bs-club"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield"/></svg> Club: <strong>${escapeHTML(bs.club.name)}</strong></div>` : ''}
+        ${clubHtml}
       </div>
       ${isMe ? `<div class="integ-foot">
         <button class="btn btn-ghost btn-sm" id="bsRefresh"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-zap"/></svg> Actualizar</button>
@@ -1164,7 +1266,7 @@
     try {
       const data = await api(`/api/integrations/spotify/now-playing/${encodeURIComponent(username)}`);
       if (!data.connected || !data.track) {
-        target.innerHTML = '<div class="muted">Sin reproducción reciente.</div>';
+        target.innerHTML = '<div class="np-empty"><div class="np-empty-ic"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg></div><div class="np-empty-text"><strong>Nada sonando</strong><span class="muted">Cuando empiece a reproducir algo, se mostrará acá.</span></div></div>';
         return;
       }
       const t = data.track;
@@ -1173,6 +1275,10 @@
       const playingChip = data.isPlaying
         ? '<span class="np-chip is-live"><span class="np-dot"></span> Sonando ahora</span>'
         : '<span class="np-chip">Última escuchada</span>';
+      const embed = t.id
+        ? `<iframe class="np-embed" src="https://open.spotify.com/embed/track/${encodeURIComponent(t.id)}?utm_source=generator&theme=0" width="100%" height="80" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" loading="lazy"></iframe>`
+        : '';
+      const album = t.album && t.album.name ? `<div class="np-album">${escapeHTML(t.album.name)}</div>` : '';
       target.innerHTML = `
         <div class="np">
           ${cover}
@@ -1180,7 +1286,12 @@
             ${playingChip}
             <a class="np-title" href="${escapeHTML(t.url || '#')}" target="_blank" rel="noopener">${escapeHTML(t.name)}</a>
             <div class="np-artist">${artists}</div>
+            ${album}
           </div>
+        </div>
+        ${embed}
+        <div class="np-actions">
+          ${t.url ? `<a class="btn btn-spotify btn-sm" href="${escapeHTML(t.url)}" target="_blank" rel="noopener"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-music"/></svg> Abrir en Spotify</a>` : ''}
         </div>`;
     } catch (e) {
       target.innerHTML = `<div class="muted">No se pudo cargar Spotify.</div>`;
@@ -1517,26 +1628,15 @@
           },
         });
         state.me = data.user;
+        state.profileEditing = false;        // auto-return to view mode after save
         applyAuthUI();
         renderProfileView();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (err) {
         errorEl.textContent = err.message;
       }
     });
 
-    $('#avatarInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'avatar'));
-    $('#bannerInput').addEventListener('change', (e) => uploadProfileMedia(e.target, 'banner'));
-
-    const copyBtn = $('#copyProfileLink');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
-          copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-check"/></svg> Copiado';
-          setTimeout(() => { copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace'; }, 1200);
-        } catch (_e) { /* ignore */ }
-      });
-    }
   }
 
   async function uploadProfileMedia(input, kind) {
