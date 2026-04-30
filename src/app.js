@@ -17,6 +17,7 @@ const serverRoutes = require('./routes/servers');
 const stickerRoutes = require('./routes/stickers');
 const dmRoutes = require('./routes/dms');
 const integrationsRoutes = require('./routes/integrations');
+const videoRoutes = require('./routes/videos');
 
 // Asset version used for cache-busting. Computed once per cold start so
 // served HTML always references the current deploy's JS/CSS.
@@ -104,6 +105,7 @@ function createApp() {
   app.use('/api/stickers', writeLimiter, stickerRoutes);
   app.use('/api/dms', dmRoutes);
   app.use('/api/integrations', integrationsRoutes);
+  app.use('/api/videos', videoRoutes);
 
   const publicDir = path.join(__dirname, '..', 'public');
   const assetVersion = computeAssetVersion(publicDir);
@@ -128,7 +130,7 @@ function createApp() {
 
   // Render index.html for SPA routes with cache-busting stamp injected.
   const indexPath = path.join(publicDir, 'index.html');
-  app.get(['/', '/login', '/register', '/profile', '/u/:username'], (_req, res) => {
+  app.get(['/', '/login', '/register', '/profile', '/clips', '/clips/:id', '/u/:username'], (_req, res) => {
     let html;
     try {
       html = fs.readFileSync(indexPath, 'utf8');

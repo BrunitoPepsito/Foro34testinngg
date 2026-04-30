@@ -146,6 +146,7 @@
     if (p === '/register') return '/register';
     if (p === '/profile') return '/profile';
     if (p.startsWith('/u/')) return '/profile';
+    if (p === '/clips' || p.startsWith('/clips/')) return '/clips';
     return '/';
   }
 
@@ -157,6 +158,7 @@
     $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.route === route));
 
     if (route === '/') initChatView();
+    if (route === '/clips') initClipsView();
     if (route === '/profile') renderProfileView();
   }
 
@@ -2056,6 +2058,378 @@
       });
     } catch (_) { /* parser opcional, no bloquea */ }
   }
+
+  // =====================================================
+  // ===== CLIPS (TikTok-style vertical video feed) =====
+  // =====================================================
+  const clips = {
+    videos: [],
+    loading: false,
+    noMore: false,
+    observer: null,
+    activeVideo: null,
+    commentVideoId: null,
+  };
+
+  function initClipsView() {
+    const feed = $('#clipsFeed');
+    if (!feed) return;
+    if (!clips.observer) {
+      clips.observer = new IntersectionObserver(onClipVisible, {
+        root: feed,
+        threshold: 0.6,
+      });
+    }
+    if (clips.videos.length === 0) loadClips(true);
+    setupClipsUpload();
+    setupClipsComments();
+  }
+
+  async function loadClips(reset) {
+    if (clips.loading) return;
+    clips.loading = true;
+    const feed = $('#clipsFeed');
+    if (reset) {
+      clips.videos = [];
+      clips.noMore = false;
+      if (feed) feed.innerHTML = '<div class="clips-loader muted">Cargando clips...</div>';
+    }
+    try {
+      const before = clips.videos.length ? clips.videos[clips.videos.length - 1].createdAt : '';
+      const url = '/api/videos/feed?limit=10' + (before ? '&before=' + encodeURIComponent(before) : '');
+      const data = await api(url);
+      if (reset && feed) feed.innerHTML = '';
+      if (!data.videos || data.videos.length === 0) {
+        clips.noMore = true;
+        if (clips.videos.length === 0 && feed) {
+          feed.innerHTML = '<div class="clips-empty muted">No hay clips todavía. ¡Subí el primero!</div>';
+        }
+        return;
+      }
+      data.videos.forEach((v) => {
+        clips.videos.push(v);
+        const card = buildClipCard(v);
+        if (feed) feed.appendChild(card);
+      });
+    } catch (err) {
+      console.error('loadClips', err);
+      if (feed && clips.videos.length === 0) {
+        feed.innerHTML = '<div class="clips-empty muted">Error cargando clips.</div>';
+      }
+    } finally {
+      clips.loading = false;
+    }
+  }
+
+  function buildClipCard(v) {
+    const card = document.createElement('div');
+    card.className = 'clip-card';
+    card.dataset.videoId = v.id;
+    const liked = v.liked ? ' liked' : '';
+    card.innerHTML = `
+      <video class="clip-video" src="${escapeHTML(v.videoUrl)}" poster="${escapeHTML(v.thumbnailUrl)}"
+             playsinline loop muted preload="metadata"></video>
+      <div class="clip-tap-overlay"></div>
+      <div class="clip-sidebar">
+        <button class="clip-sb-btn clip-like-btn${liked}" data-id="${v.id}">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <span class="clip-like-count">${formatCount(v.likeCount)}</span>
+        </button>
+        <button class="clip-sb-btn clip-comment-btn" data-id="${v.id}">
+          <svg class="ic"><use href="#i-message"/></svg>
+          <span>${formatCount(v.commentCount)}</span>
+        </button>
+        <button class="clip-sb-btn clip-share-btn" data-id="${v.id}">
+          <svg class="ic"><use href="#i-share"/></svg>
+          <span>Compartir</span>
+        </button>
+      </div>
+      <div class="clip-info">
+        <a class="clip-author" href="/u/${escapeHTML(v.author.username)}" data-route="/u/${escapeHTML(v.author.username)}">
+          <img class="clip-author-avatar" src="${v.author.avatarUrl || avatarFallback(v.author.displayName)}" alt="" />
+          <span class="clip-author-name" style="color:${escapeHTML(v.author.color)}">${escapeHTML(v.author.displayName)}</span>
+        </a>
+        ${v.caption ? `<p class="clip-caption">${escapeHTML(v.caption)}</p>` : ''}
+        ${v.tags && v.tags.length ? `<div class="clip-tags">${v.tags.map((t) => `<span class="clip-tag">#${escapeHTML(t)}</span>`).join(' ')}</div>` : ''}
+      </div>
+      <button class="clip-mute-btn" aria-label="Silenciar/Activar sonido">
+        <svg class="ic"><use href="#i-volume-x"/></svg>
+      </button>
+    `;
+    const video = card.querySelector('.clip-video');
+    const muteBtn = card.querySelector('.clip-mute-btn');
+    const tapOverlay = card.querySelector('.clip-tap-overlay');
+
+    muteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      video.muted = !video.muted;
+      muteBtn.innerHTML = video.muted
+        ? '<svg class="ic"><use href="#i-volume-x"/></svg>'
+        : '<svg class="ic"><use href="#i-volume"/></svg>';
+    });
+
+    tapOverlay.addEventListener('click', () => {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+      card.classList.toggle('paused', video.paused);
+    });
+
+    card.querySelector('.clip-like-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleClipLike(v.id, card);
+    });
+    card.querySelector('.clip-comment-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openClipComments(v.id);
+    });
+    card.querySelector('.clip-share-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      shareClip(v.id);
+    });
+
+    if (clips.observer) clips.observer.observe(card);
+
+    return card;
+  }
+
+  function formatCount(n) {
+    if (!n) return '0';
+    if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function onClipVisible(entries) {
+    entries.forEach((entry) => {
+      const card = entry.target;
+      const video = card.querySelector('.clip-video');
+      if (!video) return;
+      if (entry.isIntersecting) {
+        if (clips.activeVideo && clips.activeVideo !== video) {
+          clips.activeVideo.pause();
+          clips.activeVideo.currentTime = 0;
+        }
+        clips.activeVideo = video;
+        video.play().catch(() => {});
+        card.classList.remove('paused');
+        bumpView(card.dataset.videoId);
+        // Infinite scroll: if near the end, load more.
+        const idx = clips.videos.findIndex((v) => v.id === card.dataset.videoId);
+        if (!clips.noMore && idx >= clips.videos.length - 3) loadClips(false);
+      } else {
+        video.pause();
+      }
+    });
+  }
+
+  const viewedClips = new Set();
+  function bumpView(videoId) {
+    if (viewedClips.has(videoId)) return;
+    viewedClips.add(videoId);
+    api(`/api/videos/${videoId}/view`, { method: 'POST' }).catch(() => {});
+  }
+
+  async function toggleClipLike(videoId, card) {
+    try {
+      const data = await api(`/api/videos/${videoId}/like`, { method: 'POST' });
+      const btn = card.querySelector('.clip-like-btn');
+      const count = card.querySelector('.clip-like-count');
+      if (data.liked) btn.classList.add('liked');
+      else btn.classList.remove('liked');
+      if (count) count.textContent = formatCount(data.likeCount);
+      const v = clips.videos.find((x) => x.id === videoId);
+      if (v) { v.liked = data.liked; v.likeCount = data.likeCount; }
+    } catch (e) { console.warn('like error', e); }
+  }
+
+  function shareClip(videoId) {
+    const url = location.origin + '/clips/' + videoId;
+    if (navigator.share) {
+      navigator.share({ title: 'Foro34 Clip', url }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => alert('Link copiado!')).catch(() => {});
+    }
+  }
+
+  // ----- Clip comments -----
+  function openClipComments(videoId) {
+    clips.commentVideoId = videoId;
+    const sheet = $('#clipCommentsSheet');
+    if (!sheet) return;
+    sheet.classList.remove('hidden');
+    const list = $('#clipCommentsList');
+    if (list) list.innerHTML = '<div class="muted" style="padding:12px">Cargando...</div>';
+    loadClipComments(videoId);
+  }
+
+  function closeClipComments() {
+    const sheet = $('#clipCommentsSheet');
+    if (sheet) sheet.classList.add('hidden');
+    clips.commentVideoId = null;
+  }
+
+  async function loadClipComments(videoId) {
+    try {
+      const data = await api(`/api/videos/${videoId}/comments`);
+      const list = $('#clipCommentsList');
+      const countEl = $('#clipCommentCount');
+      if (countEl) countEl.textContent = data.total ? `(${data.total})` : '';
+      if (!list) return;
+      if (!data.comments || data.comments.length === 0) {
+        list.innerHTML = '<div class="muted" style="padding:12px">Sin comentarios. ¡Sé el primero!</div>';
+        return;
+      }
+      list.innerHTML = data.comments.map((c) => `
+        <div class="clip-comment">
+          <img class="clip-comment-avatar" src="${c.author.avatarUrl || avatarFallback(c.author.displayName)}" alt="" />
+          <div class="clip-comment-body">
+            <span class="clip-comment-name" style="color:${escapeHTML(c.author.color)}">${escapeHTML(c.author.displayName)}</span>
+            <span class="clip-comment-text">${escapeHTML(c.text)}</span>
+            <span class="clip-comment-time muted">${timeAgo(c.createdAt)}</span>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      console.error('load comments', err);
+    }
+  }
+
+  function timeAgo(dateStr) {
+    const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+    if (diff < 60) return 'ahora';
+    if (diff < 3600) return Math.floor(diff / 60) + ' min';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' h';
+    return Math.floor(diff / 86400) + ' d';
+  }
+
+  async function postClipComment() {
+    const input = $('#clipCommentInput');
+    if (!input || !clips.commentVideoId) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      await api(`/api/videos/${clips.commentVideoId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      loadClipComments(clips.commentVideoId);
+    } catch (e) {
+      alert('Error: ' + (e.message || 'no se pudo comentar'));
+    }
+  }
+
+  function setupClipsComments() {
+    const closeBtn = $('#clipCommentsClose');
+    if (closeBtn) closeBtn.onclick = closeClipComments;
+    const sendBtn = $('#clipCommentSend');
+    if (sendBtn) sendBtn.onclick = postClipComment;
+    const input = $('#clipCommentInput');
+    if (input) input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postClipComment(); }
+    });
+  }
+
+  // ----- Clip upload -----
+  let clipFile = null;
+
+  function setupClipsUpload() {
+    const btn = $('#clipsUploadBtn');
+    const modal = $('#clipUploadModal');
+    const closeBtn = $('#clipUploadClose');
+    const fileInput = $('#clipFileInput');
+    const fileDrop = $('#clipFileDrop');
+    const preview = $('#clipPreviewVideo');
+    const submitBtn = $('#clipSubmitBtn');
+
+    if (!btn || !modal) return;
+    btn.onclick = () => { if (!state.me) { go('/login'); return; } modal.classList.remove('hidden'); };
+    if (closeBtn) closeBtn.onclick = () => { modal.classList.add('hidden'); resetClipForm(); };
+    modal.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.add('hidden'); resetClipForm(); } });
+
+    if (fileInput) fileInput.addEventListener('change', () => {
+      const f = fileInput.files[0];
+      if (f) setClipFile(f, preview, submitBtn, fileDrop);
+    });
+    if (fileDrop) {
+      fileDrop.addEventListener('dragover', (e) => { e.preventDefault(); fileDrop.classList.add('dragover'); });
+      fileDrop.addEventListener('dragleave', () => { fileDrop.classList.remove('dragover'); });
+      fileDrop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        fileDrop.classList.remove('dragover');
+        const f = e.dataTransfer.files[0];
+        if (f && f.type.startsWith('video/')) setClipFile(f, preview, submitBtn, fileDrop);
+      });
+    }
+    if (submitBtn) submitBtn.onclick = submitClip;
+  }
+
+  function setClipFile(file, preview, submitBtn, fileDrop) {
+    clipFile = file;
+    if (preview) {
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove('hidden');
+      preview.play().catch(() => {});
+    }
+    if (fileDrop) fileDrop.classList.add('hidden');
+    if (submitBtn) submitBtn.disabled = false;
+  }
+
+  function resetClipForm() {
+    clipFile = null;
+    const preview = $('#clipPreviewVideo');
+    if (preview) { preview.src = ''; preview.classList.add('hidden'); }
+    const fileDrop = $('#clipFileDrop');
+    if (fileDrop) fileDrop.classList.remove('hidden');
+    const caption = $('#clipCaption');
+    if (caption) caption.value = '';
+    const tags = $('#clipTags');
+    if (tags) tags.value = '';
+    const submitBtn = $('#clipSubmitBtn');
+    if (submitBtn) submitBtn.disabled = true;
+    const progress = $('#clipProgress');
+    if (progress) progress.classList.add('hidden');
+  }
+
+  async function submitClip() {
+    if (!clipFile) return;
+    const submitBtn = $('#clipSubmitBtn');
+    const progress = $('#clipProgress');
+    const progressText = $('#clipProgressText');
+    if (submitBtn) submitBtn.disabled = true;
+    if (progress) progress.classList.remove('hidden');
+    if (progressText) progressText.textContent = 'Subiendo...';
+
+    const fd = new FormData();
+    fd.append('video', clipFile);
+    const caption = ($('#clipCaption') || {}).value || '';
+    const tags = ($('#clipTags') || {}).value || '';
+    if (caption) fd.append('caption', caption);
+    if (tags) fd.append('tags', tags);
+
+    try {
+      const data = await api('/api/videos', { method: 'POST', body: fd });
+      if (data && data.video) {
+        clips.videos.unshift(data.video);
+        const feed = $('#clipsFeed');
+        if (feed) {
+          const empty = feed.querySelector('.clips-empty');
+          if (empty) empty.remove();
+          feed.prepend(buildClipCard(data.video));
+        }
+      }
+      const modal = $('#clipUploadModal');
+      if (modal) modal.classList.add('hidden');
+      resetClipForm();
+    } catch (e) {
+      alert('Error subiendo clip: ' + (e.message || 'desconocido'));
+      if (submitBtn) submitBtn.disabled = false;
+    } finally {
+      if (progress) progress.classList.add('hidden');
+    }
+  }
+  // ===== END CLIPS =====
 
   function setupHeaderSearch() {
     const input = document.getElementById('searchInput');
