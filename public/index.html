@@ -133,6 +133,11 @@
         <symbol id="i-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="8.5" cy="14" r="1.5"/><circle cx="15.5" cy="14" r="1.5"/><line x1="12" y1="4" x2="12" y2="8"/><line x1="8" y1="4" x2="16" y2="4"/></symbol>
         <symbol id="i-bar-chart" viewBox="0 0 24 24"><line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></symbol>
         <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3a2 2 0 0 1 0 4 5 5 0 0 1-3 1"/><path d="M7 5H4a2 2 0 0 0 0 4 5 5 0 0 0 3 1"/></symbol>
+        <symbol id="i-film" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></symbol>
+        <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></symbol>
+        <symbol id="i-volume-x" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
         <symbol id="i-crown" viewBox="0 0 24 24"><path d="M2 7l5 4 5-7 5 7 5-4-2 13H4z"/></symbol>
         <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/></symbol>
         <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
@@ -194,6 +199,10 @@
           <button data-route="/" class="nav-btn active">
             <svg class="ic" aria-hidden="true"><use href="#i-home"/></svg>
             <span>Chat global</span>
+          </button>
+          <button data-route="/clips" class="nav-btn">
+            <svg class="ic" aria-hidden="true"><use href="#i-film"/></svg>
+            <span>Clips</span>
           </button>
           <button data-route="/profile" class="nav-btn js-only-auth">
             <svg class="ic" aria-hidden="true"><use href="#i-user"/></svg>
@@ -405,12 +414,67 @@
         </section>
 
         <!-- =====================
+             Vista: Clips (TikTok-style)
+             ===================== -->
+        <section class="view view-clips hidden" data-view="/clips" aria-label="Clips">
+          <div class="clips-feed" id="clipsFeed"></div>
+          <button class="clips-upload-fab js-only-auth" id="clipsUploadBtn" aria-label="Subir clip">
+            <svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
+          </button>
+        </section>
+
+        <!-- =====================
              Vista: Perfil
              ===================== -->
         <section class="view view-profile hidden" data-view="/profile" aria-labelledby="viewTitle">
           <div id="profileContainer"></div>
         </section>
       </main>
+
+      <!-- Modal: Subir clip -->
+      <div class="modal-backdrop hidden" id="clipUploadModal">
+        <div class="modal clips-upload-modal">
+          <div class="modal-head">
+            <h2>Subir clip</h2>
+            <button class="icon-btn" id="clipUploadClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <label class="file-drop" id="clipFileDrop">
+              <input type="file" accept="video/*" id="clipFileInput" hidden />
+              <svg class="ic ic-lg" aria-hidden="true"><use href="#i-film"/></svg>
+              <span>Arrastrá o tocá para elegir video</span>
+              <small class="muted">Máximo 80 MB</small>
+            </label>
+            <video class="clip-preview hidden" id="clipPreviewVideo" muted playsinline loop></video>
+            <textarea id="clipCaption" class="input" placeholder="Escribí un caption..." maxlength="500" rows="2"></textarea>
+            <input id="clipTags" class="input" placeholder="Tags (separados por coma)" maxlength="200" />
+            <button id="clipSubmitBtn" class="btn btn-primary" disabled>Subir clip</button>
+            <div class="clip-upload-progress hidden" id="clipProgress">
+              <div class="progress-bar"><div class="progress-fill" id="clipProgressFill"></div></div>
+              <span class="muted" id="clipProgressText">Subiendo...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sheet: Comentarios de clip -->
+      <div class="clip-comments-sheet hidden" id="clipCommentsSheet">
+        <div class="clip-comments-head">
+          <h3>Comentarios <span id="clipCommentCount"></span></h3>
+          <button class="icon-btn" id="clipCommentsClose" aria-label="Cerrar">
+            <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+          </button>
+        </div>
+        <div class="clip-comments-list" id="clipCommentsList"></div>
+        <div class="clip-comments-composer">
+          <input id="clipCommentInput" class="input" placeholder="Añadir comentario..." maxlength="500" />
+          <button id="clipCommentSend" class="icon-btn">
+            <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
 
     <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
