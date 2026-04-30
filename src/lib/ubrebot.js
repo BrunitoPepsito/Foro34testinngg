@@ -1,26 +1,30 @@
-// UbreBot — calls Google Gemini (preferred, faster with smaller maxOutputTokens)
-// or Groq as fallback. Mentioned via "@UbreBot ..." anywhere in chat.
+// UbreBot — calls Cerebras (preferred, ridiculously fast), Gemini, or Groq.
+// Mentioned via "@UbreBot ..." anywhere in chat.
 //
 // Speed knobs:
 //   - Aggressive timeout (8s default) so a slow upstream doesn't keep the user waiting forever.
 //   - In-memory LRU cache by (provider, prompt) to instant-respond to repeated mentions.
 //   - Lower maxOutputTokens (160) — most replies are 1-3 sentences anyway.
 //
-// Tone: latin-spanish, playful but not cringe, uses light emojis, never explains
-// the punchline, calls out absurd questions but doesn't moralize.
+// Tone: latin-spanish, sarcastic, dark humor, irreverent, banter-heavy.
+// The bot is allowed to roast users gently, swear (light), do edgy jokes about
+// taboo-but-harmless topics. It still refuses real harm: hate speech against
+// protected groups, harassment of identified people, instructions for violence,
+// CSAM, doxxing. Everything else is fair game for cotorreo.
 
 const SYSTEM_PROMPT = [
-  'Eres UbreBot, el bot oficial de Foro34, un chat tipo Discord en espa\u00f1ol latino.',
-  'Personalidad: c\u00e1lido, sarc\u00e1stico amable, juguet\u00f3n, con humor seco. Sos como ese amigo que tira chistes pero te ayuda.',
-  'Estilo: respondes en 1\u20133 oraciones cortas. Espa\u00f1ol latino casual (vos/te, "che", "dale", "posta", "qu\u00e9 onda"). Nada de tono corporativo ni "como modelo de IA".',
-  'Emojis: usa 0 o 1 por respuesta. Preferidos: \ud83d\ude2c \ud83e\udd14 \ud83d\udd25 \u2728 \ud83e\udd20 \ud83d\udca9 \ud83d\ude44.',
-  'Si te preguntan algo absurdo, segui la corriente con humor en vez de moralizar.',
-  'NUNCA inventes datos personales de quien te habla.',
-  'Si no sab\u00e9s algo, decilo con gracia.',
-  'No expliques que sos una IA a menos que te pregunten directamente.',
+  'Eres UbreBot, el bot del foro Foro34. Un chat latino con onda Discord donde la gente cotorrea pesado.',
+  'Personalidad: sarc\u00e1stico, mordaz, humor negro chingon, irreverente. Sos como el amigo m\u00e1s pesado del grupo que tira chistes ofensivos pero buena onda. Cero corporativo, cero "como modelo de IA", cero moralejas.',
+  'Estilo: vos/te ("qu\u00e9 onda", "chido", "chinga", "pinche", "cabr\u00f3n", "posta", "dale"). Respond\u00e9s en 1\u20133 oraciones m\u00e1ximo. Si la pregunta es absurda, segu\u00ed la corriente al 100% con m\u00e1s humor.',
+  'Pod\u00e9s tirar humor negro, chistes pesados sobre temas inc\u00f3modos pero sin da\u00f1o real (muerte abstracta, vicios, fracasos, polit\u00edca de pasillo, religi\u00f3n, sexualidad adulta, malas decisiones). Pod\u00e9s decir putadas suaves ("chinga", "pinche", "culero", "cabr\u00f3n", "verga", "madres"). Pod\u00e9s burlarte del usuario que te habl\u00f3, gentle roast est\u00e1 ok.',
+  'NO te pongas serio ni des advertencias. NO digas "como IA no puedo...". NO moralices. NO recomiendes terapia salvo en chiste.',
+  'L\u00edmites duros (siempre): cero odio real contra grupos (raza, g\u00e9nero, orientaci\u00f3n, religi\u00f3n, discapacidad), cero acoso a personas identificables del chat, cero instrucciones operativas de violencia/armas/drogas peligrosas, cero contenido sexual con menores, cero doxxing. Si te empujan ah\u00ed, esquiv\u00e1 con un chiste y cambi\u00e1 de tema. NO es negociable.',
+  'Emojis: 0 o 1 por respuesta, m\u00e1ximo. Preferidos: \ud83d\ude2c \ud83e\udd14 \ud83d\udd25 \u2728 \ud83e\udd20 \ud83d\udca9 \ud83d\ude44 \ud83d\udc80 \ud83e\udd21.',
+  'NUNCA inventes datos personales del que te habla. Si no sab\u00e9s algo, decilo con sorna ("ni idea, c\u00e9rebro de chinche m\u00eda").',
 ].join(' ');
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const CEREBRAS_MODEL = process.env.CEREBRAS_MODEL || 'llama3.1-8b';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 const TIMEOUT_MS = parseInt(process.env.UBREBOT_TIMEOUT_MS || '8000', 10);
 const MAX_TOKENS = parseInt(process.env.UBREBOT_MAX_TOKENS || '160', 10);
@@ -79,15 +83,15 @@ async function callGemini(apiKey, prompt, userIntro) {
   return (text || 'Hmm, no se me ocurre nada \ud83d\ude05').slice(0, 1800);
 }
 
-async function callGroq(apiKey, prompt, userIntro) {
-  const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+async function callOpenAICompatible(label, url, apiKey, model, prompt, userIntro) {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model,
       temperature: 0.85,
       max_tokens: MAX_TOKENS,
       top_p: 0.9,
@@ -99,12 +103,20 @@ async function callGroq(apiKey, prompt, userIntro) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    console.error('groq failed', res.status, txt.slice(0, 200));
+    console.error(`${label} failed`, res.status, txt.slice(0, 200));
     return `Mi cerebro est\u00e1 con un problemita (HTTP ${res.status}). Intentalo en un toque.`;
   }
   const data = await res.json();
   const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
   return (content || 'Hmm, no se me ocurre nada \ud83d\ude05').slice(0, 1800);
+}
+
+function callCerebras(apiKey, prompt, userIntro) {
+  return callOpenAICompatible('cerebras', 'https://api.cerebras.ai/v1/chat/completions', apiKey, CEREBRAS_MODEL, prompt, userIntro);
+}
+
+function callGroq(apiKey, prompt, userIntro) {
+  return callOpenAICompatible('groq', 'https://api.groq.com/openai/v1/chat/completions', apiKey, GROQ_MODEL, prompt, userIntro);
 }
 
 async function ask(prompt, context = {}) {
@@ -115,16 +127,25 @@ async function ask(prompt, context = {}) {
     ? `Te est\u00e1 hablando ${context.displayName}.`
     : '';
 
-  // Try Groq first if available — it is significantly faster than Gemini for short replies.
-  // Fall back to Gemini if Groq is missing.
+  // Provider order (first wins, fallback on error):
+  //   default     : Cerebras > Groq > Gemini  (fastest first; Cerebras ~2000 tok/s)
+  //   UBREBOT_PROVIDER=gemini : Gemini > Cerebras > Groq
+  //   UBREBOT_PROVIDER=groq   : Groq > Cerebras > Gemini
+  const cerebrasKey = process.env.CEREBRAS_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
-  const preferGemini = process.env.UBREBOT_PROVIDER === 'gemini';
+  const preferred = (process.env.UBREBOT_PROVIDER || 'cerebras').toLowerCase();
 
-  const order = [];
-  if (preferGemini && geminiKey) order.push(['gemini', () => callGemini(geminiKey, cleaned, userIntro)]);
-  if (groqKey) order.push(['groq', () => callGroq(groqKey, cleaned, userIntro)]);
-  if (geminiKey && !preferGemini) order.push(['gemini', () => callGemini(geminiKey, cleaned, userIntro)]);
+  const providers = {
+    cerebras: cerebrasKey && ['cerebras', () => callCerebras(cerebrasKey, cleaned, userIntro)],
+    groq: groqKey && ['groq', () => callGroq(groqKey, cleaned, userIntro)],
+    gemini: geminiKey && ['gemini', () => callGemini(geminiKey, cleaned, userIntro)],
+  };
+  const sortKey = (name) => (name === preferred ? 0 : name === 'cerebras' ? 1 : name === 'groq' ? 2 : 3);
+  const order = Object.keys(providers)
+    .filter((k) => providers[k])
+    .sort((a, b) => sortKey(a) - sortKey(b))
+    .map((k) => providers[k]);
 
   for (const [name, run] of order) {
     const ck = cacheKey(name, cleaned);
@@ -141,7 +162,7 @@ async function ask(prompt, context = {}) {
     }
   }
   if (!order.length) {
-    return 'Hola, soy UbreBot. Mi cerebro a\u00fan no est\u00e1 conectado. Configur\u00e1 GROQ_API_KEY o GEMINI_API_KEY y respondo de verdad. \u2728';
+    return 'Hola, soy UbreBot. Mi cerebro a\u00fan no est\u00e1 conectado. Configur\u00e1 CEREBRAS_API_KEY, GROQ_API_KEY o GEMINI_API_KEY y respondo de verdad. \u2728';
   }
   return 'Se me cay\u00f3 el wifi mental, dame un toque y vuelvo a intentarlo \ud83e\udd2f';
 }
