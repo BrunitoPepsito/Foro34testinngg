@@ -3430,3 +3430,204 @@ img.emoji {
   .integ-bs .bs-hero-trophies-num { font-size: 22px; }
   .integ-bs .bs-hero-icon { width: 64px; height: 64px; }
 }
+
+/* ====================
+   Server / DM modals (invite share, DM picker, invite preview)
+   ==================== */
+
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-3);
+  padding: 4px;
+  border-radius: 12px;
+  align-self: stretch;
+}
+.modal-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.modal-tab.active {
+  background: var(--bg-2);
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(255,255,255,.04);
+}
+.modal-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-tab-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.modal-tab-panel .field span.muted { font-size: 12px; }
+
+.invite-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.invite-link-row .input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.invite-link-row .btn { white-space: nowrap; }
+.invite-share-quick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.invite-share-code {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.invite-share-code summary {
+  cursor: pointer;
+  user-select: none;
+}
+.invite-share-code code {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--bg-3);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .5px;
+}
+
+/* Invite preview (deep-linked /invite/:code landing) */
+.invite-preview-modal { max-width: 420px; }
+.invite-preview-card {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+}
+.invite-preview-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--primary), #5b21b6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(124,92,255,.35);
+}
+.invite-preview-card h3 {
+  margin: 0;
+  font-size: 22px;
+}
+.invite-preview-card p { margin: 0; }
+.invite-preview-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.invite-preview-error {
+  text-align: center;
+  padding: 12px 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.invite-preview-error h3 { margin: 0; }
+
+/* DM picker */
+.dm-picker-modal { max-width: 440px; }
+.dm-picker-results {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -8px;
+}
+.dm-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.dm-picker-row:hover, .dm-picker-row:focus {
+  background: var(--bg-3);
+  outline: none;
+}
+.dm-picker-row .av {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.dm-picker-row .av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.dm-picker-row .info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dm-picker-row .name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-picker-row .handle {
+  font-size: 12px;
+}
+
+/* Server foot share row */
+.channel-list-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.channel-list-foot .btn { padding: 6px 10px; font-size: 12px; }
+
+/* Buttons used in our new modals */
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .modal { max-width: calc(100vw - 24px); }
+  .invite-link-row { flex-direction: column; }
+  .dm-picker-results { max-height: 50vh; }
+}

@@ -229,8 +229,11 @@
           </div>
           <div id="channels" role="list"></div>
           <div class="channel-list-foot">
-            <code id="inviteCode" title="Click para copiar el código de invitación"></code>
-            <button id="leaveServerBtn" class="btn btn-ghost">Salir</button>
+            <button id="inviteShareBtn" class="btn btn-ghost btn-sm" title="Compartir invitación">
+              <svg class="ic ic-sm" aria-hidden="true"><use href="#i-share"/></svg>
+              Invitar
+            </button>
+            <button id="leaveServerBtn" class="btn btn-ghost btn-sm">Salir</button>
           </div>
         </section>
 
@@ -455,6 +458,113 @@
               <div class="progress-bar"><div class="progress-fill" id="clipProgressFill"></div></div>
               <span class="muted" id="clipProgressText">Subiendo...</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Crear / unirse a servidor -->
+      <div class="modal-backdrop hidden" id="serverModal">
+        <div class="modal server-modal">
+          <div class="modal-head">
+            <h2 id="serverModalTitle">Servidores</h2>
+            <button class="icon-btn" id="serverModalClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-tabs" role="tablist">
+              <button class="modal-tab active" data-tab="create" role="tab">Crear</button>
+              <button class="modal-tab" data-tab="join" role="tab">Unirme</button>
+            </div>
+            <div class="modal-tab-panel" data-panel="create">
+              <label class="field">
+                <span class="muted">Nombre del server</span>
+                <input id="srvCreateName" class="input" placeholder="Ej: Mi pinche grupo" maxlength="40" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="muted">Icono (1 emoji o letra)</span>
+                <input id="srvCreateIcon" class="input" placeholder="🚀" maxlength="8" autocomplete="off" />
+              </label>
+              <button class="btn btn-primary" id="srvCreateBtn">
+                <svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus"/></svg>
+                Crear server
+              </button>
+              <p class="form-error" id="srvCreateError"></p>
+            </div>
+            <div class="modal-tab-panel hidden" data-panel="join">
+              <label class="field">
+                <span class="muted">Pega el código o un link de invitación</span>
+                <input id="srvJoinCode" class="input" placeholder="código o https://.../invite/abc123" autocomplete="off" />
+              </label>
+              <button class="btn btn-primary" id="srvJoinBtn">
+                <svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg>
+                Unirme
+              </button>
+              <p class="form-error" id="srvJoinError"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Compartir invitación de server -->
+      <div class="modal-backdrop hidden" id="inviteShareModal">
+        <div class="modal invite-share-modal">
+          <div class="modal-head">
+            <h2>Invitar a <span id="inviteShareName"></span></h2>
+            <button class="icon-btn" id="inviteShareClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="muted" style="margin:0">Compartí este link con tus amigos. Pueden hacer click y unirse al instante.</p>
+            <div class="invite-link-row">
+              <input id="inviteShareUrl" class="input" readonly />
+              <button class="btn btn-primary" id="inviteShareCopyBtn">
+                <svg class="ic ic-sm" aria-hidden="true"><use href="#i-copy"/></svg>
+                Copiar
+              </button>
+            </div>
+            <div class="invite-share-quick">
+              <button class="btn btn-ghost btn-sm" id="inviteShareNativeBtn">
+                <svg class="ic ic-sm" aria-hidden="true"><use href="#i-share"/></svg>
+                Compartir
+              </button>
+              <button class="btn btn-ghost btn-sm" id="inviteShareWhatsappBtn">
+                <svg class="ic ic-sm" aria-hidden="true"><use href="#i-message"/></svg>
+                WhatsApp
+              </button>
+            </div>
+            <details class="invite-share-code">
+              <summary class="muted">¿Querés solo el código?</summary>
+              <code id="inviteShareCode"></code>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Vista previa del invite (cuando entrás a /invite/:code) -->
+      <div class="modal-backdrop hidden" id="invitePreviewModal">
+        <div class="modal invite-preview-modal">
+          <div class="modal-body">
+            <div class="invite-preview-content" id="invitePreviewContent">
+              <p class="muted" style="text-align:center">Cargando…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Iniciar DM (buscar usuario) -->
+      <div class="modal-backdrop hidden" id="dmPickerModal">
+        <div class="modal dm-picker-modal">
+          <div class="modal-head">
+            <h2>Iniciar mensaje directo</h2>
+            <button class="icon-btn" id="dmPickerClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <input id="dmPickerInput" class="input" placeholder="Buscá por @username o nombre…" autocomplete="off" />
+            <div class="dm-picker-results" id="dmPickerResults"></div>
           </div>
         </div>
       </div>
