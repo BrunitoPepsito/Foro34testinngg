@@ -55,6 +55,7 @@ function createApp() {
         'img-src': ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com', 'https://i.scdn.co', 'https://mosaic.scdn.co', 'https://cdn.brawlify.com', 'https:'],
         'media-src': ["'self'", 'blob:', 'https://res.cloudinary.com', 'https://p.scdn.co', 'https:'],
         'connect-src': ["'self'", 'https://*.pusher.com', 'wss://*.pusher.com', 'wss://*.pusherapp.com'],
+        'frame-src': ["'self'", 'https://open.spotify.com'],
         'frame-ancestors': ["'self'"],
         'object-src': ["'none'"],
         'base-uri': ["'self'"],

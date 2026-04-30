@@ -3103,3 +3103,330 @@ img.emoji {
 @media (max-width: 760px) {
   .view-clips { height: calc(100vh - 56px); }
 }
+
+/* ============================================================
+   Profile v6 — view/edit toggle, avatar fab, share row,
+   Spotify embed, Brawl Stars hero + top brawlers.
+   All additive: existing rules untouched.
+   ============================================================ */
+.profile { position: relative; }
+
+.profile-edit-toggle {
+  position: absolute;
+  top: 16px; right: 16px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 18, 25, .55);
+  border-color: rgba(255,255,255,.18);
+  box-shadow: 0 6px 20px -8px rgba(0,0,0,.6);
+}
+.profile-edit-toggle:hover {
+  background: rgba(20, 24, 32, .75);
+  border-color: rgba(255,255,255,.28);
+}
+.profile.is-editing .profile-edit-toggle {
+  background: var(--bg-2);
+}
+
+.profile-share-row {
+  padding: 12px 32px 0;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+
+.avatar-edit-fab {
+  position: absolute;
+  right: 4px; bottom: 4px;
+  z-index: 5;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 6px 20px -8px rgba(0,0,0,.6);
+  transition: transform .15s ease;
+}
+.avatar-edit-fab:hover { transform: scale(1.08); }
+.avatar-edit-fab .ic { width: 16px; height: 16px; }
+.avatar-edit-fab .file-input { display: none; }
+
+/* Show editor section more prominently when editing */
+.profile.is-editing .profile-section {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 8%, var(--bg-2)),
+    var(--bg));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+/* ===== Spotify embed enhancements ===== */
+.integ-spotify .np {
+  margin-bottom: 8px;
+}
+.integ-spotify .np-cover {
+  width: 72px; height: 72px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -8px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04);
+}
+.integ-spotify .np-album {
+  font-size: 12px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.integ-spotify .np-empty {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-3);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.integ-spotify .np-empty-ic {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, #1db954 14%, transparent);
+  color: #1db954;
+  flex-shrink: 0;
+}
+.integ-spotify .np-empty-text {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.integ-spotify .np-empty-text strong { color: #fff; font-size: 14px; }
+.integ-spotify .np-empty-text .muted { font-size: 12px; }
+
+.integ-spotify .np-embed {
+  display: block;
+  width: 100%;
+  height: 80px;
+  border: 0;
+  border-radius: 12px;
+  margin-top: 6px;
+  background: var(--bg-3);
+}
+.integ-spotify .np-actions {
+  margin-top: 8px;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.btn.btn-spotify.btn-sm {
+  padding: 5px 12px; font-size: 12px;
+  border-radius: 999px;
+}
+
+/* ===== Brawl Stars v2 — hero, top brawlers, club ===== */
+.integ-bs {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, #fbbf24 8%, var(--bg-2)),
+    var(--bg-2));
+}
+.integ-bs .integ-body {
+  display: flex; flex-direction: column; gap: 14px;
+}
+.integ-bs .bs-hero {
+  display: flex; gap: 14px; align-items: center;
+}
+.integ-bs .bs-hero-icon {
+  position: relative;
+  width: 76px; height: 76px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  flex-shrink: 0;
+  box-shadow: 0 8px 24px -10px rgba(245, 158, 11, .55), inset 0 0 0 2px rgba(255,255,255,.18);
+}
+.integ-bs .bs-player-icon {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.integ-bs .bs-icon-fallback {
+  display: flex; align-items: center; justify-content: center;
+  color: #1b1f27;
+}
+.integ-bs .bs-hero-level {
+  position: absolute; right: 4px; bottom: 4px;
+  background: rgba(0,0,0,.7);
+  color: #fbbf24;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, .35);
+}
+.integ-bs .bs-hero-info {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.integ-bs .bs-hero-trophies {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  color: #fbbf24;
+}
+.integ-bs .bs-hero-trophies .ic { width: 18px; height: 18px; align-self: center; }
+.integ-bs .bs-hero-trophies-num {
+  font-size: 26px; font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 18px color-mix(in srgb, #fbbf24 40%, transparent);
+  font-feature-settings: 'tnum';
+}
+.integ-bs .bs-hero-trophies-label {
+  font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+}
+.integ-bs .bs-progress {
+  height: 8px;
+  position: relative;
+  border-radius: 4px;
+  overflow: visible;
+  background: var(--bg-3);
+}
+.integ-bs .bs-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24, #fde68a);
+  box-shadow: 0 0 12px color-mix(in srgb, #fbbf24 40%, transparent);
+}
+.integ-bs .bs-progress-meta {
+  display: flex; justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px; color: var(--muted);
+}
+
+/* Top brawlers grid */
+.integ-bs .bs-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.integ-bs .bs-brawlers-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.integ-bs .bs-brawler-card {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), transparent 70%),
+    var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 8px 8px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  overflow: hidden;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.integ-bs .bs-brawler-card:hover { transform: translateY(-2px); }
+.integ-bs .bs-brawler-card.is-gold {
+  border-color: color-mix(in srgb, #fbbf24 50%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fbbf24 14%, transparent), transparent 70%),
+    var(--bg-3);
+}
+.integ-bs .bs-brawler-card.is-silver {
+  border-color: color-mix(in srgb, #cbd5e1 40%, var(--border));
+}
+.integ-bs .bs-brawler-card.is-bronze {
+  border-color: color-mix(in srgb, #b45309 50%, var(--border));
+}
+.integ-bs .bs-brawler-medal {
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 18px; height: 18px;
+  font-size: 11px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.integ-bs .bs-brawler-card.is-gold .bs-brawler-medal {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1b1f27;
+  border-color: transparent;
+}
+.integ-bs .bs-brawler-card.is-silver .bs-brawler-medal {
+  background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+  color: #1b1f27;
+  border-color: transparent;
+}
+.integ-bs .bs-brawler-card.is-bronze .bs-brawler-medal {
+  background: linear-gradient(135deg, #b45309, #92400e);
+  color: #fff;
+  border-color: transparent;
+}
+.integ-bs .bs-brawler-img-wrap {
+  width: 64px; height: 64px;
+  display: flex; align-items: center; justify-content: center;
+}
+.integ-bs .bs-brawler-img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,.4));
+}
+.integ-bs .bs-brawler-name {
+  font-size: 12px; font-weight: 600;
+  color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.integ-bs .bs-brawler-meta {
+  display: flex; justify-content: center; gap: 8px;
+  font-size: 11px; color: var(--muted);
+}
+.integ-bs .bs-brawler-trophies {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: #fbbf24; font-weight: 600;
+}
+.integ-bs .bs-brawler-trophies .ic { width: 11px; height: 11px; }
+.integ-bs .bs-brawler-power {
+  color: #a3e635;
+  font-weight: 600;
+}
+.integ-bs .bs-brawler-rank {
+  position: absolute;
+  top: 6px; right: 6px;
+  font-size: 9px; font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  letter-spacing: .3px;
+}
+.integ-bs .bs-brawler-rank[data-rank="35"],
+.integ-bs .bs-brawler-rank[data-rank="34"],
+.integ-bs .bs-brawler-rank[data-rank="33"],
+.integ-bs .bs-brawler-rank[data-rank="32"],
+.integ-bs .bs-brawler-rank[data-rank="31"] {
+  background: linear-gradient(135deg, #c026d3, #ec4899);
+}
+.integ-bs .bs-brawler-rank[data-rank="30"],
+.integ-bs .bs-brawler-rank[data-rank="29"],
+.integ-bs .bs-brawler-rank[data-rank="28"],
+.integ-bs .bs-brawler-rank[data-rank="27"],
+.integ-bs .bs-brawler-rank[data-rank="26"] {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1b1f27;
+}
+
+.integ-bs .bs-club {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 10px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px;
+}
+.integ-bs .bs-club-label {
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px; font-size: 10px;
+}
+.integ-bs .bs-club .ic { color: #fbbf24; }
+
+/* Tighter on mobile */
+@media (max-width: 760px) {
+  .profile-edit-toggle { top: 8px; right: 8px; padding: 6px 10px; font-size: 12px; }
+  .profile-share-row { padding-left: 14px; padding-right: 14px; }
+  .integ-bs .bs-brawler-img-wrap { width: 52px; height: 52px; }
+  .integ-bs .bs-hero-trophies-num { font-size: 22px; }
+  .integ-bs .bs-hero-icon { width: 64px; height: 64px; }
+}

@@ -222,6 +222,7 @@ router.get('/spotify/now-playing/:username', async (req, res) => {
       });
     }
     const track = {
+      id: trackData.id || '',
       name: trackData.name,
       url: (trackData.external_urls && trackData.external_urls.spotify) || '',
       artists: (trackData.artists || []).map((a) => ({ name: a.name, url: (a.external_urls && a.external_urls.spotify) || '' })),
@@ -279,6 +280,40 @@ async function fetchBsPlayer(tag) {
   return r.json();
 }
 
+// Build the integration snapshot stored on the user. Centralizes the shape so
+// connect / refresh / public-cache-refresh all agree.
+function buildBsSnapshot(tag, data) {
+  const brawlers = Array.isArray(data.brawlers) ? data.brawlers : [];
+  const topBrawlers = brawlers
+    .slice()
+    .sort((a, b) => (b.trophies || 0) - (a.trophies || 0))
+    .slice(0, 5)
+    .map((b) => ({
+      id: b.id || 0,
+      name: b.name || '',
+      power: b.power || 0,
+      rank: b.rank || 0,
+      trophies: b.trophies || 0,
+      highestTrophies: b.highestTrophies || 0,
+    }));
+  return {
+    connected: true,
+    tag,
+    name: data.name || '',
+    trophies: data.trophies || 0,
+    highestTrophies: data.highestTrophies || 0,
+    expLevel: data.expLevel || 0,
+    brawlersUnlocked: brawlers.length,
+    threeVsThreeVictories: data['3vs3Victories'] || data.threeVsThreeVictories || 0,
+    soloVictories: data.soloVictories || 0,
+    duoVictories: data.duoVictories || 0,
+    club: data.club ? { tag: data.club.tag || '', name: data.club.name || '' } : { tag: '', name: '' },
+    iconId: (data.icon && data.icon.id) || 0,
+    topBrawlers,
+    fetchedAt: new Date(),
+  };
+}
+
 router.post('/brawlstars/connect', authRequired, async (req, res) => {
   try {
     const tag = normalizeBsTag(req.body && req.body.tag);
@@ -289,18 +324,7 @@ router.post('/brawlstars/connect', authRequired, async (req, res) => {
 
     const data = await fetchBsPlayer(tag);
     user.integrations = user.integrations || {};
-    user.integrations.brawlStars = {
-      connected: true,
-      tag,
-      name: data.name || '',
-      trophies: data.trophies || 0,
-      highestTrophies: data.highestTrophies || 0,
-      expLevel: data.expLevel || 0,
-      brawlersUnlocked: Array.isArray(data.brawlers) ? data.brawlers.length : 0,
-      club: data.club ? { tag: data.club.tag || '', name: data.club.name || '' } : { tag: '', name: '' },
-      iconId: (data.icon && data.icon.id) || 0,
-      fetchedAt: new Date(),
-    };
+    user.integrations.brawlStars = buildBsSnapshot(tag, data);
     user.markModified('integrations');
     await user.save();
     res.json({ ok: true, brawlStars: user.toPublicJSON().integrations.brawlStars });
@@ -329,18 +353,7 @@ router.post('/brawlstars/refresh', authRequired, async (req, res) => {
     const bs = user.integrations && user.integrations.brawlStars;
     if (!bs || !bs.connected || !bs.tag) return res.status(400).json({ error: 'Not connected' });
     const data = await fetchBsPlayer(bs.tag);
-    user.integrations.brawlStars = {
-      connected: true,
-      tag: bs.tag,
-      name: data.name || '',
-      trophies: data.trophies || 0,
-      highestTrophies: data.highestTrophies || 0,
-      expLevel: data.expLevel || 0,
-      brawlersUnlocked: Array.isArray(data.brawlers) ? data.brawlers.length : 0,
-      club: data.club ? { tag: data.club.tag || '', name: data.club.name || '' } : { tag: '', name: '' },
-      iconId: (data.icon && data.icon.id) || 0,
-      fetchedAt: new Date(),
-    };
+    user.integrations.brawlStars = buildBsSnapshot(bs.tag, data);
     user.markModified('integrations');
     await user.save();
     res.json({ ok: true, brawlStars: user.toPublicJSON().integrations.brawlStars });
@@ -364,18 +377,7 @@ router.get('/brawlstars/profile/:username', async (req, res) => {
     if (stale && brawlStarsConfigured()) {
       try {
         const data = await fetchBsPlayer(bs.tag);
-        user.integrations.brawlStars = {
-          connected: true,
-          tag: bs.tag,
-          name: data.name || '',
-          trophies: data.trophies || 0,
-          highestTrophies: data.highestTrophies || 0,
-          expLevel: data.expLevel || 0,
-          brawlersUnlocked: Array.isArray(data.brawlers) ? data.brawlers.length : 0,
-          club: data.club ? { tag: data.club.tag || '', name: data.club.name || '' } : { tag: '', name: '' },
-          iconId: (data.icon && data.icon.id) || 0,
-          fetchedAt: new Date(),
-        };
+        user.integrations.brawlStars = buildBsSnapshot(bs.tag, data);
         user.markModified('integrations');
         await user.save();
       } catch (e) {
