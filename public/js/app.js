@@ -948,7 +948,11 @@
         state.me = data.user;
         applyAuthUI();
         loadNotifications().catch(() => {});
-        loadServers().catch(() => {});
+        // Await loadServers before consumePendingInvite. Otherwise the GET
+        // /api/servers response could resolve *after* the join and clobber
+        // state.servers with a stale snapshot, dropping the freshly joined
+        // server from the rail.
+        await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
         await consumePendingInvite();
@@ -976,7 +980,9 @@
         state.me = data.user;
         applyAuthUI();
         loadNotifications().catch(() => {});
-        loadServers().catch(() => {});
+        // See login handler — must await before consumePendingInvite to
+        // avoid clobbering state.servers with a pre-join snapshot.
+        await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
         await consumePendingInvite();
@@ -1899,7 +1905,18 @@
   }
 
   async function openInvitePreview(code) {
-    bindModalDismiss('#invitePreviewModal');
+    // The /invite/:code route has no matching .view section, so dismissing
+    // the modal would leave the user on a blank page. Bind a custom
+    // backdrop handler that also navigates home, instead of using the
+    // generic bindModalDismiss helper.
+    const backdrop = $('#invitePreviewModal');
+    if (backdrop) {
+      backdrop.onclick = (e) => {
+        if (e.target !== backdrop) return;
+        hideModal('#invitePreviewModal');
+        go('/', true);
+      };
+    }
     const content = $('#invitePreviewContent');
     if (!content) return;
     content.innerHTML = '<p class="muted" style="text-align:center;padding:20px">Cargando…</p>';
