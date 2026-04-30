@@ -260,7 +260,7 @@
       </button>`;
     }).join('');
     return `<div class="poll-card">
-      <div class="poll-q">📊 ${escapeHTML(m.poll.question)}</div>
+      <div class="poll-q"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-bar-chart"/></svg> ${escapeHTML(m.poll.question)}</div>
       <div class="poll-opts">${opts}</div>
       <div class="poll-meta">${total} voto${total === 1 ? '' : 's'}</div>
     </div>`;
@@ -268,7 +268,7 @@
 
   function renderReplyPreview(rt) {
     if (!rt) return '';
-    const snippet = rt.snippet ? escapeHTML(rt.snippet) : (rt.snippetImage ? '🖼️ imagen' : '');
+    const snippet = rt.snippet ? escapeHTML(rt.snippet) : (rt.snippetImage ? '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-image"/></svg> imagen' : '');
     return `<div class="msg-reply-preview" data-jump="${escapeHTML(rt.id || '')}" style="border-color:${escapeHTML(rt.authorColor || '#555')}">
       <span class="reply-name" style="color:${escapeHTML(rt.authorColor || '#aaa')}">↪ ${escapeHTML(rt.authorDisplayName || '')}</span>
       <span class="reply-snip">${snippet}</span>
@@ -285,6 +285,7 @@
     renderMessageInto(wrap, m);
     if (animate) wrap.style.animation = 'fadeIn .15s ease';
     list.appendChild(wrap);
+    tw(wrap);
     scrollToBottom();
   }
 
@@ -294,6 +295,7 @@
     const existing = list.querySelector(`[data-msg-id="${m.id}"]`);
     if (!existing) return appendMessage(m);
     renderMessageInto(existing, m);
+    tw(existing);
   }
 
   function renderMessageInto(wrap, m) {
@@ -306,7 +308,7 @@
     wrap.className = 'msg' + (isAction ? ' is-action' : '') + (isSystem ? ' is-system' : '') + (isMine ? ' is-mine' : '');
     const avatar = a.avatarUrl
       ? `<img src="${escapeHTML(a.avatarUrl)}" alt="" />`
-      : (a.bot ? '🤖' : escapeHTML((a.displayName || '?').charAt(0).toUpperCase()));
+      : (a.bot ? '<svg class="ic" aria-hidden="true" style="width:60%;height:60%"><use href="#i-bot"/></svg>' : escapeHTML((a.displayName || '?').charAt(0).toUpperCase()));
     const nameClass = `${a.anonymous ? 'msg-name anon' : 'msg-name clickable'} ${fontClass(a.nameFont)}`;
     const nameAttrs = a.anonymous ? '' : `data-username="${escapeHTML(a.username || '')}"`;
     const dClass = decoClass(a.decoration);
@@ -331,11 +333,11 @@
     }
     const actions = isDeleted ? '' : `
       <div class="msg-actions">
-        <button class="msg-act" data-act="react" title="Reaccionar">😊</button>
-        <button class="msg-act" data-act="reply" title="Responder">↪</button>
-        ${isMine && !isSystem && !isPoll ? '<button class="msg-act" data-act="edit" title="Editar">✏️</button>' : ''}
-        ${isMine ? '<button class="msg-act" data-act="delete" title="Borrar">🗑️</button>' : ''}
-        ${state.me && !isMine ? '<button class="msg-act" data-act="pin" title="Pinear en mi perfil">📌</button>' : ''}
+        <button class="msg-act" data-act="react" title="Reaccionar" aria-label="Reaccionar"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-smile"/></svg></button>
+        <button class="msg-act" data-act="reply" title="Responder" aria-label="Responder"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-reply"/></svg></button>
+        ${isMine && !isSystem && !isPoll ? '<button class="msg-act" data-act="edit" title="Editar" aria-label="Editar"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-edit"/></svg></button>' : ''}
+        ${isMine ? '<button class="msg-act" data-act="delete" title="Borrar" aria-label="Borrar"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trash"/></svg></button>' : ''}
+        ${state.me && !isMine ? '<button class="msg-act" data-act="pin" title="Pinear en mi perfil" aria-label="Pinear"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-pin"/></svg></button>' : ''}
       </div>`;
     wrap.innerHTML = `
       <div class="msg-avatar ${dClass}" style="background:${escapeHTML(a.color || '#7c5cff')}">${avatar}</div>
@@ -413,6 +415,7 @@
     picker.innerHTML = QUICK_REACTIONS.map((e) => `<button type="button" data-e="${escapeHTML(e)}">${escapeHTML(e)}</button>`).join('') +
       '<input type="text" class="emoji-input" placeholder="otro" maxlength="4" />';
     document.body.appendChild(picker);
+    tw(picker);
     const r = anchorBtn.getBoundingClientRect();
     picker.style.top = `${r.top + window.scrollY - picker.offsetHeight - 4}px`;
     picker.style.left = `${Math.min(window.innerWidth - 220, r.left)}px`;
@@ -483,7 +486,7 @@
       banner.classList.remove('hidden');
     } else if (state.replyTo) {
       const rt = state.replyTo;
-      const snip = (rt.text || '').slice(0, 80) || (rt.imageUrl ? '🖼️ imagen' : '');
+      const snip = (rt.text || '').slice(0, 80) || (rt.imageUrl ? '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-image"/></svg> imagen' : '');
       banner.innerHTML = `<span>Respondiendo a <b style="color:${escapeHTML(rt.author.color || '#fff')}">${escapeHTML(rt.author.displayName)}</b>: ${escapeHTML(snip)}</span><button type="button" id="cancelMode">×</button>`;
       banner.classList.remove('hidden');
     } else {
@@ -600,7 +603,7 @@
     const el = $('#onlineList');
     if (!el) return;
     const items = [...state.online.values()];
-    el.innerHTML = `<div class="online-count">🟢 ${items.length} en línea</div>` +
+    el.innerHTML = `<div class="online-count">${items.length} en línea</div>` +
       items.slice(0, 50).map((u) => `<div class="online-row ${u.username ? 'clickable' : ''}" data-username="${escapeHTML(u.username || '')}">
         <span class="online-dot" style="background:${escapeHTML(u.color || '#7c5cff')}"></span>
         <span class="online-name ${decoClass(u.decoration)}">${escapeHTML(u.displayName)}</span>
@@ -608,6 +611,7 @@
     el.querySelectorAll('.online-row.clickable').forEach((r) => {
       r.addEventListener('click', () => { const u = r.dataset.username; if (u) go(`/u/${u}`); });
     });
+    tw(el);
   }
 
   function showTyping(name) {
@@ -989,7 +993,7 @@
     container.innerHTML = `
       <div class="${profileClass}" style="${styleVars}">
         <div class="${bannerClass}">
-          ${isMe ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput">📷 Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>` : ''}
+          ${isMe ? `<div class="profile-banner-edit"><label class="btn" for="bannerInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar banner</label><input type="file" id="bannerInput" accept="image/*,image/gif" class="file-input" /></div>` : ''}
         </div>
         <div class="profile-head">
           <div class="${avatarFrameClasses}">${avatarTag}</div>
@@ -1001,16 +1005,17 @@
           </div>
         </div>
         ${isMe ? `<div class="profile-actions">
-          <label class="btn btn-primary" for="avatarInput">📸 Cambiar foto</label>
+          <label class="btn btn-primary" for="avatarInput"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-camera"/></svg> Cambiar foto</label>
           <input type="file" id="avatarInput" accept="image/*,image/gif" class="file-input" />
-          <button class="btn" id="copyProfileLink">🔗 Copiar enlace</button>
+          <button class="btn" id="copyProfileLink"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace</button>
         </div>` : ''}
         <div class="profile-bio">${bioHtml}</div>
         ${linksHtml ? `<div class="profile-links">${linksHtml}</div>` : ''}
-        <div id="pinnedSection" class="profile-pins"><h3>📌 Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
-        <div id="achievementsSection" class="profile-achievements"><h3>🏆 Logros</h3><div id="achievementsGrid" class="achievement-grid"></div></div>
+        <div id="pinnedSection" class="profile-pins"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-pin"/></svg> Mensajes destacados</h3><div id="pinnedMessages" class="muted">Cargando…</div></div>
+        <div id="achievementsSection" class="profile-achievements"><h3><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trophy"/></svg> Logros</h3><div id="achievementsGrid" class="achievement-grid"></div></div>
         ${isMe ? renderEditor(user) : ''}
       </div>`;
+    tw(container);
 
     loadPinnedMessages(user.username).catch(() => {});
     renderAchievements(user);
@@ -1046,6 +1051,7 @@
         </div>
       </div>`;
     }).join('');
+    tw(grid);
   }
 
   async function loadPinnedMessages(username) {
@@ -1095,7 +1101,7 @@
       <div class="link-row" data-i="${i}">
         <input class="link-label" placeholder="Etiqueta" maxlength="30" value="${escapeHTML(l.label || '')}" />
         <input class="link-url" placeholder="https://…" maxlength="200" value="${escapeHTML(l.url || '')}" />
-        <button type="button" class="btn btn-ghost link-del" title="Quitar">✕</button>
+        <button type="button" class="btn btn-ghost link-del" title="Quitar" aria-label="Quitar"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"/></svg></button>
       </div>`).join('');
 
     return `
@@ -1244,7 +1250,7 @@
       div.innerHTML = `
         <input class="link-label" placeholder="Etiqueta" maxlength="30" />
         <input class="link-url" placeholder="https://…" maxlength="200" />
-        <button type="button" class="btn btn-ghost link-del" title="Quitar">✕</button>`;
+        <button type="button" class="btn btn-ghost link-del" title="Quitar" aria-label="Quitar"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"/></svg></button>`;
       linksEditor.appendChild(div);
     });
     linksEditor.addEventListener('click', (e) => {
@@ -1294,8 +1300,8 @@
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(`${location.origin}/u/${user.username}`);
-          copyBtn.textContent = '✓ Copiado';
-          setTimeout(() => { copyBtn.textContent = '🔗 Copiar enlace'; }, 1200);
+          copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-check"/></svg> Copiado';
+          setTimeout(() => { copyBtn.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-link"/></svg> Copiar enlace'; }, 1200);
         } catch (_e) { /* ignore */ }
       });
     }
@@ -1748,12 +1754,7 @@
     // Notifications + side panels.
     const notifBtn = $('#notifBtn');
     if (notifBtn) notifBtn.addEventListener('click', toggleNotifPanel);
-    const onlineToggle = $('#onlineToggle');
-    if (onlineToggle) {
-      onlineToggle.addEventListener('click', () => {
-        const p = $('#onlinePanel'); if (p) p.classList.toggle('open');
-      });
-    }
+    setupOnlinePanelToggle();
     if (state.me) {
       loadNotifications().catch(() => {});
       loadServers().catch(() => {});
@@ -1766,6 +1767,64 @@
     setupDmControls();
     setupMobileDrawer();
     setupHeaderSearch();
+  }
+
+  // ============================================================
+  // Online panel toggle (visibilidad persistida en localStorage).
+  // En desktop colapsa la columna del grid, en mobile abre/cierra
+  // el drawer (.open). Refleja estado en aria-pressed para a11y.
+  // ============================================================
+  function setupOnlinePanelToggle() {
+    const btn = $('#onlineToggle');
+    const panel = $('#onlinePanel');
+    const grid = document.querySelector('.chat-grid');
+    if (!btn || !panel || !grid) return;
+    const KEY = 'foro34.onlinePanelHidden';
+    const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
+    const apply = () => {
+      const hidden = localStorage.getItem(KEY) === '1';
+      if (isMobile()) {
+        // En mobile el panel arranca cerrado siempre; localStorage no aplica.
+        panel.classList.remove('open');
+        grid.classList.remove('online-collapsed');
+        btn.setAttribute('aria-pressed', 'false');
+      } else {
+        grid.classList.toggle('online-collapsed', hidden);
+        panel.classList.remove('open');
+        btn.setAttribute('aria-pressed', String(!hidden));
+      }
+    };
+    btn.addEventListener('click', () => {
+      if (isMobile()) {
+        const open = panel.classList.toggle('open');
+        btn.setAttribute('aria-pressed', String(open));
+      } else {
+        const nowHidden = !grid.classList.contains('online-collapsed');
+        grid.classList.toggle('online-collapsed', nowHidden);
+        if (nowHidden) localStorage.setItem(KEY, '1');
+        else localStorage.removeItem(KEY);
+        btn.setAttribute('aria-pressed', String(!nowHidden));
+      }
+    });
+    window.addEventListener('resize', apply);
+    apply();
+  }
+
+  // ============================================================
+  // Twemoji: reemplaza emojis nativos por SVGs estilo Twitter/Discord
+  // (consistencia visual cross-platform). Se llama después de cada
+  // render que pueda contener emojis (mensajes, online list, perfil…).
+  // ============================================================
+  function tw(el) {
+    if (!el || !window.twemoji) return;
+    try {
+      window.twemoji.parse(el, {
+        folder: 'svg',
+        ext: '.svg',
+        base: 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/',
+        className: 'emoji',
+      });
+    } catch (_) { /* parser opcional, no bloquea */ }
   }
 
   function setupHeaderSearch() {

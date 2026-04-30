@@ -866,18 +866,16 @@ a:hover { text-decoration: underline; }
   animation: deco-pulse 3s ease-in-out infinite;
   inset: -8px;
 }
+/* Base crown decoration. Overridden later (v4.2) by an inline-SVG
+   version so it renders consistently across platforms. */
 .deco-crown::after {
-  content: '👑';
+  content: '';
   position: absolute;
   top: -22px; left: 50%;
   transform: translateX(-50%);
-  font-size: 28px;
-  text-shadow: 0 2px 6px rgba(0,0,0,.5);
   pointer-events: none;
   z-index: 2;
 }
-.msg-avatar.deco-crown::after,
-.me-avatar-wrap.deco-crown::after { font-size: 14px; top: -10px; }
 
 /* Halo: angelic glow ring above head. */
 .deco-halo::before {
@@ -1976,4 +1974,259 @@ body { font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
   padding: 1px 6px !important;
   border-radius: 4px !important;
   box-shadow: none !important;
+}
+
+/* =====================================================================
+   v4.1 — Producción: logo "34", a11y helpers y polish minimalista.
+   Estilo objetivo: YouTube + Discord + Twitch + Kick, todo plano y oscuro.
+   ===================================================================== */
+
+/* skip link para teclado / lectores de pantalla */
+.skip-link {
+  position: fixed;
+  top: -100px; left: 8px;
+  z-index: 9999;
+  padding: 10px 14px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--t);
+}
+.skip-link:focus { top: 8px; outline: 2px solid #fff; outline-offset: 2px; }
+
+/* aviso si no hay JS */
+.noscript-banner {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 9999;
+  padding: 12px 16px;
+  background: var(--danger);
+  color: #fff;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* sprite SVG inline: lo escondemos pero accesible */
+.svg-sprite { position: absolute; pointer-events: none; }
+
+/* ---- Marca: logo "34" minimalista ---------------------------------- */
+.brand { padding: 14px 16px 12px; }
+.brand-link {
+  display: flex; align-items: center; gap: 12px;
+  color: inherit; text-decoration: none;
+  font-weight: 800; font-size: 18px;
+  letter-spacing: -.4px;
+  border-radius: 10px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  transition: background var(--t-fast);
+}
+.brand-link:hover { background: var(--surface-hover); text-decoration: none; }
+.brand-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.brand-logo {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: transparent;     /* el gradiente ahora vive dentro del SVG */
+  box-shadow: none;
+  padding: 0;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.brand-logo svg {
+  width: 100%; height: 100%;
+  display: block;
+}
+.brand-logo .brand-logo-bg {
+  fill: var(--primary);
+}
+
+/* nombre de marca: tipografía compacta, sin gradiente */
+.brand-name {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--text) !important;
+  font-weight: 800;
+  letter-spacing: -.3px;
+}
+
+/* ---- Imagen redimensionada para servers cuando son fotos ---------- */
+.server-icon img { display: block; }
+
+/* ---- Polish minimalista global ------------------------------------- */
+.view-head h1 { letter-spacing: -.2px; font-weight: 700; }
+.badge { letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+
+/* botón primary más cerca del estilo "live now" tipo Twitch/Kick */
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: none;
+}
+.btn-primary:hover { background: var(--primary-2); }
+
+/* en mobile, el menú lateral ya estaba; aseguramos que el botón
+   no se solape con la cabecera del chat */
+@media (max-width: 760px) {
+  .brand { padding: 10px 16px; }
+  .brand-link { font-size: 17px; }
+  .brand-logo { width: 32px; height: 32px; }
+}
+
+/* =====================================================================
+   v4.2 — UI minimalista pos-feedback Tilino:
+   - Quitamos badge "EN VIVO" y footer Express/Mongo/Cloudinary/Pusher.
+   - Online panel toggleable (persistido en localStorage por el JS).
+   - Mobile-first: server-rail + sidebar + online-panel se colapsan
+     y se abren on-demand. Drawer overlay para online-panel en mobile.
+   - Twemoji: <img class="emoji"> reemplaza emojis nativos en mensajes,
+     reacciones y cualquier texto user-generated; se ve consistente en
+     iOS / Android / Windows / Linux.
+   ===================================================================== */
+
+/* Toggle del panel de online: cuando el chat-grid tiene .online-collapsed
+   contraemos la columna a 0 y el panel sale del flujo en un fade-out limpio. */
+.chat-grid.online-collapsed { grid-template-columns: minmax(0, 1fr) 0; }
+.chat-grid.online-collapsed .online-panel {
+  border-left: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+}
+.chat-grid { transition: grid-template-columns .25s var(--ease, ease); }
+.online-panel { transition: opacity .2s var(--ease, ease), padding .25s ease, width .25s ease; }
+
+/* Estado "active" del icon-btn (Discord-style: highlight cuando el panel está abierto) */
+.icon-btn[aria-pressed="true"],
+.icon-btn.active {
+  background: var(--bg-3);
+  color: var(--primary);
+  border-color: rgba(124, 92, 255, .35);
+}
+.icon-btn[aria-pressed="true"] .ic,
+.icon-btn.active .ic { color: var(--primary); }
+
+/* Online list: dot-only “en línea” (sin emoji 🟢) */
+.online-count {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 12px;
+  margin-bottom: 10px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.online-count::before {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--success, #4ade80);
+  box-shadow: 0 0 0 0 rgba(74, 222, 128, .6);
+  animation: onlinePulse 2s var(--ease, ease) infinite;
+  flex-shrink: 0;
+}
+@keyframes onlinePulse {
+  0%   { box-shadow: 0 0 0 0   rgba(74, 222, 128, .55); }
+  70%  { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(74, 222, 128, 0); }
+}
+
+/* Twemoji: reemplazo de los emojis nativos por SVGs estilo Twitter/Discord.
+   El <img class="emoji"> lo inyecta twemoji.parse() en runtime. */
+img.emoji {
+  height: 1.15em;
+  width: 1.15em;
+  margin: 0 .05em 0 .1em;
+  vertical-align: -0.18em;
+  display: inline-block;
+}
+.online-row img.emoji,
+.msg-name img.emoji,
+.brand img.emoji,
+.title-badge img.emoji,
+.handle img.emoji { height: 1em; width: 1em; vertical-align: -0.15em; }
+/* Reacciones: emoji ligeramente más grande para legibilidad */
+.reaction img.emoji { height: 1.25em; width: 1.25em; vertical-align: -0.22em; }
+/* Acciones de mensaje (botones SVG) ya usan .ic; nada que parsear ahí. */
+
+/* Decoración de coronita: ahora con SVG inline en lugar del emoji 👑 */
+.deco-crown::after {
+  content: '';
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffd54a' stroke='%23a86b00' stroke-width='1.2' stroke-linejoin='round'><path d='M2 7l5 4 5-7 5 7 5-4-2 13H4z'/></svg>") center/contain no-repeat;
+  width: 28px; height: 22px;
+  position: absolute;
+  top: -18px; left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .55));
+}
+.msg-avatar.deco-crown::after,
+.me-avatar-wrap.deco-crown::after { width: 14px; height: 11px; top: -9px; }
+
+/* Botones del composer mejor alineados y con tap-target ≥40px */
+.composer .upload, .composer button.upload {
+  min-width: 40px; min-height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Mensajes: acciones flotantes, ahora todas SVG (ic-sm). */
+.msg-actions .msg-act {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  border-radius: 6px;
+}
+.msg-actions .msg-act:hover { color: var(--text); background: var(--bg-3); }
+.msg-actions .msg-act .ic { width: 16px; height: 16px; }
+
+/* ============== Mobile-first responsive (≤900px) ============== */
+@media (max-width: 900px) {
+  /* En mobile, el online-panel SIEMPRE arranca cerrado; el toggle del header
+     muestra/oculta. La columna del grid no aplica (1fr). */
+  .chat-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .online-panel {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(78vw, 320px);
+    background: var(--bg-2);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform .22s var(--ease, ease);
+    z-index: 200;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, .5);
+    padding: 16px 14px;
+    width: min(78vw, 320px);
+    opacity: 1;
+  }
+  .online-panel.open { transform: translateX(0); }
+
+  /* Backdrop cuando el panel está abierto */
+  .online-panel.open::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: calc(100vw - min(78vw, 320px)); height: 100vh;
+    background: rgba(0, 0, 0, .45);
+    pointer-events: auto;
+    z-index: -1;
+  }
+}
+
+/* ============== Compact responsive (≤640px) ============== */
+@media (max-width: 640px) {
+  .view-head h1 { font-size: 15px; letter-spacing: -.2px; }
+  .view-head { gap: 8px; }
+  .header-search { display: none; }      /* en pantallas chicas la barra de búsqueda quita espacio al toggle */
+  .view-head-actions { gap: 4px; }
+  .icon-btn { padding: 4px 8px; }
+  .me-name { max-width: 90px; }
+  /* El server-rail como columna 56px sigue ok; lo escondemos solo si es <420px. */
+}
+
+@media (max-width: 420px) {
+  .server-rail { display: none; }
 }
