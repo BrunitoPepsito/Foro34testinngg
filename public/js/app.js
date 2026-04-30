@@ -1106,6 +1106,13 @@
       </div>`;
     tw(container);
 
+    // CSP-safe image fallbacks: hide BS CDN images that fail to load. Inline
+    // onerror= attributes would be silently dropped by our CSP (no
+    // 'unsafe-inline' on script-src).
+    container.querySelectorAll('img.bs-player-icon, img.bs-brawler-img').forEach((img) => {
+      img.onerror = () => { img.style.display = 'none'; };
+    });
+
     if (isMe) {
       const editBtn = $('#profileEditToggle');
       if (editBtn) editBtn.addEventListener('click', () => {
@@ -1186,14 +1193,14 @@
     }
     const trophyPct = bs.highestTrophies > 0 ? Math.min(100, Math.round((bs.trophies / bs.highestTrophies) * 100)) : 0;
     const playerIcon = bs.iconId
-      ? `<img class="bs-player-icon" src="https://cdn.brawlify.com/profile-icons/regular/${bs.iconId}.png" alt="" loading="lazy" onerror="this.style.display='none'" />`
+      ? `<img class="bs-player-icon" src="https://cdn.brawlify.com/profile-icons/regular/${bs.iconId}.png" alt="" loading="lazy" />`
       : `<div class="bs-player-icon bs-icon-fallback"><svg class="ic" aria-hidden="true"><use href="#i-gamepad"/></svg></div>`;
 
     const topBrawlers = Array.isArray(bs.topBrawlers) ? bs.topBrawlers : [];
     const topBrawlersHtml = topBrawlers.slice(0, 3).map((b, i) => {
       const slug = String(b.name || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       const img = slug
-        ? `<img class="bs-brawler-img" src="https://cdn.brawlify.com/brawlers/borderless/${slug}.png" alt="" loading="lazy" onerror="this.style.display='none'" />`
+        ? `<img class="bs-brawler-img" src="https://cdn.brawlify.com/brawlers/borderless/${slug}.png" alt="" loading="lazy" />`
         : '';
       const rankBadge = b.rank ? `<span class="bs-brawler-rank" data-rank="${Math.min(35, b.rank)}">R${b.rank}</span>` : '';
       const medal = ['gold', 'silver', 'bronze'][i] || '';
