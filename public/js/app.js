@@ -1731,31 +1731,9 @@
     if (inviteBtn) inviteBtn.onclick = () => openInviteShareModal(state.activeServer);
     const channels = state.activeServer.channels || [];
     const wrap2 = $('#channels');
-    const activeVoice = state.voiceCh && state.voiceCh.active;
-    wrap2.innerHTML = channels.map((c) => {
-      const isVoice = c.type === 'voice';
-      const sigil = isVoice ? '<svg class="ic ic-sm"><use href="#i-mic"/></svg>' : '<span class="hash">#</span>';
-      const isActive = !isVoice && c.id === state.activeChannel;
-      const inVoice = isVoice && activeVoice && activeVoice.channelId === c.id;
-      return `<div class="channel-row ${isActive ? 'active' : ''} ${isVoice ? 'channel-voice' : ''} ${inVoice ? 'in-voice' : ''}" data-channel="${escapeHTML(c.id)}" data-channel-type="${escapeHTML(c.type || 'text')}">${sigil} ${escapeHTML(c.name)}${inVoice ? ' <span class="muted" style="margin-left:auto;font-size:11px">conectado</span>' : ''}</div>`;
-    }).join('');
+    wrap2.innerHTML = channels.map((c) => `<div class="channel-row ${c.id === state.activeChannel ? 'active' : ''}" data-channel="${escapeHTML(c.id)}"><span class="hash">#</span> ${escapeHTML(c.name)}</div>`).join('');
     wrap2.querySelectorAll('.channel-row').forEach((row) => {
-      row.addEventListener('click', () => {
-        const t = row.dataset.channelType;
-        const id = row.dataset.channel;
-        if (t === 'voice') {
-          const ch = (state.activeServer.channels || []).find((c) => c.id === id);
-          if (!ch) return;
-          // toggle: leave if already in this voice channel
-          if (state.voiceCh && state.voiceCh.active && state.voiceCh.active.channelId === id) {
-            leaveVoiceChannel().catch(() => {});
-            return;
-          }
-          joinVoiceChannel(state.activeServer, ch).catch(() => {});
-        } else {
-          switchChannel(id);
-        }
-      });
+      row.addEventListener('click', () => switchChannel(row.dataset.channel));
     });
     const newCh = $('#newChannelBtn');
     if (newCh) newCh.onclick = openCreateChannelPrompt;
@@ -1776,15 +1754,11 @@
     const s = state.servers.find((x) => x.id === id);
     if (!s) return;
     state.activeServer = s;
-    // First *text* channel — voice channels never become the read room.
-    const firstText = (s.channels || []).find((c) => c.type !== 'voice') || s.channels[0];
-    state.activeChannel = firstText ? firstText.id : null;
+    state.activeChannel = (s.channels[0] || {}).id || null;
     renderDmList();
     renderServerRail();
     renderChannelList();
-    if (state.activeChannel && firstText && firstText.type !== 'voice') {
-      changeRoom(`srv-${s.id}-${state.activeChannel}`);
-    }
+    if (state.activeChannel) changeRoom(`srv-${s.id}-${state.activeChannel}`);
   }
   function switchChannel(channelId) {
     if (!state.activeServer) return;
@@ -2030,26 +2004,14 @@
     if (state.activeServer.ownerId !== state.me.id) { alert('Solo el owner crea canales'); return; }
     const name = prompt('Nombre del canal (sin #):');
     if (!name) return;
-    // Quick prompt for channel type — keeps the existing flow simple while
-    // letting owners create voice channels without a separate UI.
-    const isVoice = confirm('¿Este canal es de VOZ? Aceptar = voz, Cancelar = texto');
-    const type = isVoice ? 'voice' : 'text';
-    api(`/api/servers/${state.activeServer.id}/channels`, { method: 'POST', body: { name, type } })
+    api(`/api/servers/${state.activeServer.id}/channels`, { method: 'POST', body: { name } })
       .then((r) => {
         const idx = state.servers.findIndex((s) => s.id === r.server.id);
         if (idx >= 0) state.servers[idx] = r.server;
         state.activeServer = r.server;
-        const newCh = r.server.channels[r.server.channels.length - 1];
-        // Only auto-switch the room when the new channel is text. Voice
-        // channels need an explicit join (mic permission), so we just
-        // re-render the list and let the user click to join.
-        if (newCh && newCh.type !== 'voice') {
-          state.activeChannel = newCh.id;
-          renderChannelList();
-          changeRoom(`srv-${r.server.id}-${state.activeChannel}`);
-        } else {
-          renderChannelList();
-        }
+        state.activeChannel = r.server.channels[r.server.channels.length - 1].id;
+        renderChannelList();
+        changeRoom(`srv-${r.server.id}-${state.activeChannel}`);
       })
       .catch((e) => alert('Error: ' + e.message));
   }
@@ -2812,246 +2774,6 @@
     return true;
   }
 
-  // ============================================================
-  // Voice channels (WebRTC mesh + Pusher signaling).
-  // Each peer creates an RTCPeerConnection per other peer; offer/
-  // answer/ICE candidates are exchanged via client-events on the
-  // presence-voice-{room} channel. Audio is rendered per remote
-  // peer with a hidden <audio>, the HUD shows who's connected.
-  // ============================================================
-  state.voiceCh = {
-    active: null,         // { serverId, channelId, channelName, room }
-    presence: null,       // Pusher presence channel
-    localStream: null,
-    peers: new Map(),     // userId -> { pc, audioEl, talking }
-    muted: false,
-  };
-
-  async function joinVoiceChannel(server, channel) {
-    if (!state.me) { flashToast('Inicia sesión para entrar a voz'); return; }
-    if (!state.pusher) { flashToast('Realtime no disponible'); return; }
-    if (state.voiceCh.active) await leaveVoiceChannel();
-    const room = `presence-voice-${server.id}-${channel.id}`;
-    state.voiceCh.active = { serverId: server.id, channelId: channel.id, channelName: channel.name, room };
-    // Re-render so the channel row picks up the in-voice/conectado state.
-    try { renderChannelList(); } catch (_e) { /* ignore */ }
-    // Acquire mic
-    try {
-      state.voiceCh.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    } catch (e) {
-      flashToast('No se pudo acceder al micrófono');
-      state.voiceCh.active = null;
-      return;
-    }
-    // Subscribe to presence channel for signaling.
-    const ch = state.pusher.subscribe(room);
-    state.voiceCh.presence = ch;
-    ch.bind('pusher:subscription_succeeded', (members) => {
-      // For each existing peer (not us), initiate an offer.
-      members.each((m) => {
-        if (m.id !== members.myID) initiatePeer(m.id, true);
-      });
-      showVoiceHud();
-    });
-    ch.bind('pusher:member_added', (m) => {
-      // Existing members do NOT initiate to a new joiner — the joiner
-      // initiates outward to everyone in subscription_succeeded above.
-      // But we need to be ready to receive their offer.
-      addVoiceHudMember(m.id, m.info);
-    });
-    ch.bind('pusher:member_removed', (m) => {
-      tearDownPeer(m.id);
-      removeVoiceHudMember(m.id);
-    });
-    // Custom signaling events (client-events on presence channels).
-    ch.bind('client-rtc-offer', (data) => {
-      if (!data || data.to !== getOwnPresenceId()) return;
-      receiveOffer(data.from, data.sdp);
-    });
-    ch.bind('client-rtc-answer', (data) => {
-      if (!data || data.to !== getOwnPresenceId()) return;
-      receiveAnswer(data.from, data.sdp);
-    });
-    ch.bind('client-rtc-ice', (data) => {
-      if (!data || data.to !== getOwnPresenceId()) return;
-      const peer = state.voiceCh.peers.get(data.from);
-      if (peer && data.candidate) {
-        peer.pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
-      }
-    });
-  }
-
-  function getOwnPresenceId() {
-    return state.me ? state.me.id : '';
-  }
-
-  function makePeerConnection(remoteId) {
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-    const audioEl = document.createElement('audio');
-    audioEl.autoplay = true;
-    audioEl.playsInline = true;
-    document.body.appendChild(audioEl);
-    pc.ontrack = (ev) => {
-      audioEl.srcObject = ev.streams[0];
-    };
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate && state.voiceCh.presence) {
-        state.voiceCh.presence.trigger('client-rtc-ice', {
-          from: getOwnPresenceId(),
-          to: remoteId,
-          candidate: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate,
-        });
-      }
-    };
-    pc.onconnectionstatechange = () => {
-      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-        tearDownPeer(remoteId);
-      }
-    };
-    if (state.voiceCh.localStream) {
-      for (const track of state.voiceCh.localStream.getTracks()) {
-        pc.addTrack(track, state.voiceCh.localStream);
-      }
-    }
-    state.voiceCh.peers.set(remoteId, { pc, audioEl });
-    return pc;
-  }
-
-  async function initiatePeer(remoteId, asCaller) {
-    if (state.voiceCh.peers.has(remoteId)) return;
-    const pc = makePeerConnection(remoteId);
-    if (!asCaller) return; // remote is caller; we wait for their offer
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      state.voiceCh.presence.trigger('client-rtc-offer', {
-        from: getOwnPresenceId(),
-        to: remoteId,
-        sdp: pc.localDescription,
-      });
-    } catch (e) { console.warn('rtc offer', e); }
-  }
-
-  async function receiveOffer(remoteId, sdp) {
-    let entry = state.voiceCh.peers.get(remoteId);
-    if (!entry) {
-      const pc = makePeerConnection(remoteId);
-      entry = state.voiceCh.peers.get(remoteId);
-      if (!entry) entry = { pc };
-    }
-    try {
-      await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      const ans = await entry.pc.createAnswer();
-      await entry.pc.setLocalDescription(ans);
-      state.voiceCh.presence.trigger('client-rtc-answer', {
-        from: getOwnPresenceId(),
-        to: remoteId,
-        sdp: entry.pc.localDescription,
-      });
-    } catch (e) { console.warn('rtc answer', e); }
-  }
-
-  async function receiveAnswer(remoteId, sdp) {
-    const peer = state.voiceCh.peers.get(remoteId);
-    if (!peer) return;
-    try {
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    } catch (e) { console.warn('rtc set answer', e); }
-  }
-
-  function tearDownPeer(remoteId) {
-    const peer = state.voiceCh.peers.get(remoteId);
-    if (!peer) return;
-    try { peer.pc.close(); } catch (_e) { /* ignore */ }
-    if (peer.audioEl && peer.audioEl.parentNode) peer.audioEl.parentNode.removeChild(peer.audioEl);
-    state.voiceCh.peers.delete(remoteId);
-    removeVoiceHudMember(remoteId);
-  }
-
-  async function leaveVoiceChannel() {
-    const v = state.voiceCh;
-    if (!v.active) return;
-    if (v.presence) {
-      try { state.pusher.unsubscribe(v.active.room); } catch (_e) { /* ignore */ }
-      v.presence = null;
-    }
-    for (const id of [...v.peers.keys()]) tearDownPeer(id);
-    if (v.localStream) {
-      for (const t of v.localStream.getTracks()) try { t.stop(); } catch (_e) { /* ignore */ }
-      v.localStream = null;
-    }
-    v.active = null;
-    v.muted = false;
-    hideVoiceHud();
-    // Refresh channel list so the 'conectado' badge disappears.
-    try { renderChannelList(); } catch (_e) { /* ignore */ }
-  }
-
-  function showVoiceHud() {
-    const hud = $('#voiceHud');
-    if (!hud) return;
-    hud.classList.remove('hidden');
-    const name = $('#voiceHudChannelName');
-    if (name && state.voiceCh.active) name.textContent = '# ' + state.voiceCh.active.channelName;
-    const muteBtn = $('#voiceHudMute');
-    if (muteBtn) muteBtn.onclick = toggleVoiceMute;
-    const leaveBtn = $('#voiceHudLeave');
-    if (leaveBtn) leaveBtn.onclick = () => leaveVoiceChannel();
-    refreshVoiceHudMembers();
-  }
-
-  function hideVoiceHud() {
-    const hud = $('#voiceHud');
-    if (hud) hud.classList.add('hidden');
-  }
-
-  function refreshVoiceHudMembers() {
-    const ul = $('#voiceHudMembers');
-    if (!ul) return;
-    ul.innerHTML = '';
-    const presence = state.voiceCh.presence;
-    if (!presence || !presence.members) return;
-    presence.members.each((m) => {
-      addVoiceHudMember(m.id, m.info);
-    });
-  }
-
-  function addVoiceHudMember(id, info) {
-    const ul = $('#voiceHudMembers');
-    if (!ul) return;
-    if (ul.querySelector(`[data-uid="${CSS.escape(id)}"]`)) return;
-    const li = document.createElement('div');
-    li.className = 'voice-hud-member';
-    li.dataset.uid = id;
-    const av = (info && info.avatarUrl) || '';
-    const name = (info && info.displayName) || (info && info.username) || 'Usuario';
-    li.innerHTML = `${av ? `<img class="voice-hud-avatar" src="${escapeHTML(av)}" alt="">` : '<span class="voice-hud-avatar-fallback"></span>'}<span class="voice-hud-name">${escapeHTML(name)}</span>`;
-    ul.appendChild(li);
-  }
-
-  function removeVoiceHudMember(id) {
-    const ul = $('#voiceHudMembers');
-    if (!ul) return;
-    const el = ul.querySelector(`[data-uid="${CSS.escape(id)}"]`);
-    if (el) el.remove();
-  }
-
-  function toggleVoiceMute() {
-    const v = state.voiceCh;
-    if (!v.localStream) return;
-    v.muted = !v.muted;
-    for (const t of v.localStream.getAudioTracks()) t.enabled = !v.muted;
-    const btn = $('#voiceHudMute');
-    if (btn) btn.classList.toggle('on', v.muted);
-  }
-
-  function setupVoiceChannels() {
-    // Cleanup on tab close so we don't ghost in the channel.
-    window.addEventListener('beforeunload', () => {
-      if (state.voiceCh.active) leaveVoiceChannel();
-    });
-  }
-
   // ----- Boot -----
   async function boot() {
     setupNav();
@@ -3090,7 +2812,6 @@
     setupMobileDrawer();
     setupHeaderSearch();
     setupStories();
-    setupVoiceChannels();
     setupPushNotifications().catch(() => {});
   }
 

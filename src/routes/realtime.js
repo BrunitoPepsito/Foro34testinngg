@@ -19,10 +19,6 @@ router.post('/auth', authOptional, async (req, res) => {
 
     let presenceData = null;
     if (channel.startsWith('presence-')) {
-      // Voice channels are auth-only — anons can't join voice rooms.
-      if (channel.startsWith('presence-voice-') && !req.user) {
-        return res.status(403).json({ error: 'Inicia sesi\u00f3n para entrar a voz' });
-      }
       let id;
       let info;
       if (req.user) {

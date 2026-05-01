@@ -120,9 +120,7 @@ router.post('/:id/channels', authRequired, async (req, res) => {
       return res.status(409).json({ error: 'Ya existe un canal con ese nombre' });
     }
     const topic = (req.body.topic || '').toString().slice(0, 200);
-    const reqType = (req.body.type || 'text').toString();
-    const type = ['text', 'voice', 'announce'].includes(reqType) ? reqType : 'text';
-    s.channels.push({ name, type, topic });
+    s.channels.push({ name, topic });
     await s.save();
     res.json({ server: s.toClientJSON() });
   } catch (err) {

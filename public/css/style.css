@@ -3633,7 +3633,7 @@ img.emoji {
 }
 
 /* ============================================================
-   Phase 4 — Stories rail + viewer, voice channel HUD,
+   Phase 4 — Stories rail + viewer,
    push notifications banner, story uploader.
    ============================================================ */
 
@@ -3867,95 +3867,6 @@ img.emoji {
 .story-viewer-tap-prev { left: 0; }
 .story-viewer-tap-next { right: 0; }
 
-/* --- Voice channel HUD (floating bottom-right when connected) --- */
-.voice-hud {
-  position: fixed;
-  right: 16px;
-  bottom: 90px;
-  width: 260px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  z-index: 60;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
-}
-.voice-hud.hidden { display: none; }
-.voice-hud-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.voice-hud-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px #22c55e;
-  animation: voicePulse 1.5s ease-in-out infinite;
-}
-@keyframes voicePulse {
-  0%,100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.voice-hud-leave { margin-left: auto; }
-.voice-hud-members {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-  margin-bottom: 8px;
-}
-.voice-hud-member {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.04);
-}
-.voice-hud-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-.voice-hud-avatar-fallback {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--border);
-  display: inline-block;
-}
-.voice-hud-name { font-size: 13px; }
-.voice-hud-controls { display: flex; justify-content: center; }
-.btn-icon-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--fg);
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.btn-icon-toggle.on {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
-}
-
-/* --- Voice channel rows in channel list --- */
-.channel-row.channel-voice .ic { color: var(--muted); }
-.channel-row.channel-voice.in-voice {
-  background: rgba(34,197,94,0.12);
-  color: #22c55e;
-}
-
 /* --- Push notifications banner --- */
 .push-banner {
   position: fixed;
@@ -3992,7 +3903,6 @@ img.emoji {
 @media (max-width: 760px) {
   .push-banner { flex-direction: column; align-items: stretch; text-align: center; }
   .push-banner-actions { justify-content: center; }
-  .voice-hud { right: 8px; bottom: 80px; width: calc(100vw - 16px); max-width: 320px; }
   .stories-rail { padding: 8px 10px 4px; }
   .story-tile { width: 60px; }
   .story-ring { width: 56px; height: 56px; }
