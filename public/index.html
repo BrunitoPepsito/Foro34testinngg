@@ -586,13 +586,8 @@
           </div>
           <div class="modal-body">
             <p class="muted" style="margin:0 0 12px 0;font-size:13px">Tu story dura 24 horas. Imagen o video corto.</p>
-            <div class="story-upload-preview" id="storyUploadPreview">
-              <label class="story-upload-pick">
-                <input type="file" id="storyUploadInput" accept="image/*,video/*" hidden />
-                <svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg>
-                <span>Elegir archivo</span>
-              </label>
-            </div>
+            <input type="file" id="storyUploadInput" accept="image/*,video/*" hidden />
+            <div class="story-upload-preview" id="storyUploadPreview"></div>
             <input id="storyCaptionInput" class="input" placeholder="Caption (opcional)" maxlength="200" />
             <div class="form-error" id="storyUploadError" aria-live="polite"></div>
             <div class="form-actions">

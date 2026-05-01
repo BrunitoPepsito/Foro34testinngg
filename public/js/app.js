@@ -2457,21 +2457,25 @@
     captionInput.value = '';
     if (errEl) errEl.textContent = '';
     submitBtn.disabled = true;
-    // reset preview area
-    preview.innerHTML = '';
-    const pickLabel = document.createElement('label');
-    pickLabel.className = 'story-upload-pick';
-    pickLabel.innerHTML = '<svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg><span>Elegir archivo</span>';
-    pickLabel.appendChild(fileInput);
+    // The file input lives outside #storyUploadPreview in the HTML so we
+    // can freely wipe the preview between picks without detaching it.
     fileInput.value = '';
-    preview.appendChild(pickLabel);
-    pickLabel.onclick = () => fileInput.click();
+    const renderPicker = () => {
+      preview.innerHTML = '';
+      const pickLabel = document.createElement('button');
+      pickLabel.type = 'button';
+      pickLabel.className = 'story-upload-pick';
+      pickLabel.innerHTML = '<svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg><span>Elegir archivo</span>';
+      pickLabel.onclick = () => fileInput.click();
+      preview.appendChild(pickLabel);
+    };
+    renderPicker();
 
     fileInput.onchange = () => {
       const f = fileInput.files && fileInput.files[0];
       if (!f) return;
       if (f.size > 30 * 1024 * 1024) {
-        errEl.textContent = 'Archivo muy grande (máx 30 MB)';
+        errEl.textContent = 'Archivo muy grande (m\u00e1x 30 MB)';
         return;
       }
       pending = f;
@@ -2607,6 +2611,14 @@
           const ms = Math.round((el.duration || 5) * 1000);
           durationMs = Math.min(15000, Math.max(2000, ms));
           startTimer(durationMs);
+        };
+        // If the video errors out (network, codec, CORS) neither
+        // onloadedmetadata nor onended ever fires, so without this the
+        // viewer would freeze on a blank frame. Fall back to 5s so the
+        // user can still progress.
+        el.onerror = () => {
+          if (token !== v.slideToken) return;
+          startTimer(5000);
         };
         media.appendChild(el);
       } else {
