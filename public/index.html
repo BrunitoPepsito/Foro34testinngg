@@ -290,6 +290,12 @@
             </div>
           </header>
 
+          <!-- Stories rail: 24h ephemeral image/video posts. Only renders
+               when there are active stories or the user is logged in. -->
+          <div class="stories-rail" id="storiesRail" aria-label="Stories">
+            <div class="stories-row" id="storiesRow"></div>
+          </div>
+
           <div class="chat-grid">
             <div class="chat-main">
               <div id="messages" class="messages" aria-live="polite" aria-label="Mensajes"></div>
@@ -566,6 +572,91 @@
             <input id="dmPickerInput" class="input" placeholder="Buscá por @username o nombre…" autocomplete="off" />
             <div class="dm-picker-results" id="dmPickerResults"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Modal: Subir Story -->
+      <div class="modal-backdrop hidden" id="storyUploadModal">
+        <div class="modal story-upload-modal">
+          <div class="modal-head">
+            <h2>Compartir Story</h2>
+            <button class="icon-btn" id="storyUploadClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="muted" style="margin:0 0 12px 0;font-size:13px">Tu story dura 24 horas. Imagen o video corto.</p>
+            <div class="story-upload-preview" id="storyUploadPreview">
+              <label class="story-upload-pick">
+                <input type="file" id="storyUploadInput" accept="image/*,video/*" hidden />
+                <svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg>
+                <span>Elegir archivo</span>
+              </label>
+            </div>
+            <input id="storyCaptionInput" class="input" placeholder="Caption (opcional)" maxlength="200" />
+            <div class="form-error" id="storyUploadError" aria-live="polite"></div>
+            <div class="form-actions">
+              <button class="btn-secondary" id="storyUploadCancel">Cancelar</button>
+              <button class="btn-primary" id="storyUploadSubmit" disabled>Publicar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Viewer de Stories: full-screen con barras de progreso por slide -->
+      <div class="story-viewer hidden" id="storyViewer" aria-label="Visor de stories">
+        <div class="story-viewer-bars" id="storyViewerBars"></div>
+        <div class="story-viewer-head">
+          <div class="story-viewer-author">
+            <div class="story-viewer-avatar" id="storyViewerAvatar"></div>
+            <div>
+              <div class="story-viewer-name" id="storyViewerName"></div>
+              <div class="story-viewer-time" id="storyViewerTime"></div>
+            </div>
+          </div>
+          <div class="story-viewer-actions">
+            <button class="icon-btn hidden" id="storyViewerDelete" aria-label="Borrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>
+            </button>
+            <button class="icon-btn" id="storyViewerClose" aria-label="Cerrar">
+              <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="story-viewer-media" id="storyViewerMedia"></div>
+        <div class="story-viewer-caption" id="storyViewerCaption"></div>
+        <button class="story-viewer-tap story-viewer-tap-prev" id="storyViewerPrev" aria-label="Anterior"></button>
+        <button class="story-viewer-tap story-viewer-tap-next" id="storyViewerNext" aria-label="Siguiente"></button>
+      </div>
+
+      <!-- HUD flotante de canal de voz cuando estás conectado -->
+      <div class="voice-hud hidden" id="voiceHud" role="status" aria-live="polite">
+        <div class="voice-hud-head">
+          <span class="voice-hud-dot"></span>
+          <strong id="voiceHudChannelName">Voz</strong>
+          <button class="icon-btn voice-hud-leave" id="voiceHudLeave" title="Salir" aria-label="Salir del canal de voz">
+            <svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"/></svg>
+          </button>
+        </div>
+        <div class="voice-hud-members" id="voiceHudMembers"></div>
+        <div class="voice-hud-controls">
+          <button class="btn-icon-toggle" id="voiceHudMute" title="Silenciar" aria-label="Silenciar">
+            <svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg>
+            <span>Mic</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Banner discreto para pedir permiso de notificaciones -->
+      <div class="push-banner hidden" id="pushBanner" role="status">
+        <svg class="ic" aria-hidden="true"><use href="#i-bell"/></svg>
+        <div class="push-banner-text">
+          <strong>Activá las notificaciones</strong>
+          <span>Te avisamos por @menciones y DMs aunque cierres la pestaña.</span>
+        </div>
+        <div class="push-banner-actions">
+          <button class="btn-secondary" id="pushBannerLater">Después</button>
+          <button class="btn-primary" id="pushBannerEnable">Activar</button>
         </div>
       </div>
 

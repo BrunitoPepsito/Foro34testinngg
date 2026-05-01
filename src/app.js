@@ -18,6 +18,8 @@ const stickerRoutes = require('./routes/stickers');
 const dmRoutes = require('./routes/dms');
 const integrationsRoutes = require('./routes/integrations');
 const videoRoutes = require('./routes/videos');
+const pushRoutes = require('./routes/push');
+const storyRoutes = require('./routes/stories');
 
 // Asset version used for cache-busting. Computed once per cold start so
 // served HTML always references the current deploy's JS/CSS.
@@ -52,7 +54,7 @@ function createApp() {
         'script-src': ["'self'", 'https://js.pusher.com'],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        'img-src': ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com', 'https://i.scdn.co', 'https://mosaic.scdn.co', 'https://cdn.brawlify.com', 'https:'],
+        'img-src': ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com', 'https://i.scdn.co', 'https://mosaic.scdn.co', 'https://cdn.brawlify.com', 'https://image.pollinations.ai', 'https:'],
         'media-src': ["'self'", 'blob:', 'https://res.cloudinary.com', 'https://p.scdn.co', 'https:'],
         'connect-src': ["'self'", 'https://*.pusher.com', 'wss://*.pusher.com', 'wss://*.pusherapp.com'],
         'frame-src': ["'self'", 'https://open.spotify.com'],
@@ -107,6 +109,8 @@ function createApp() {
   app.use('/api/dms', dmRoutes);
   app.use('/api/integrations', integrationsRoutes);
   app.use('/api/videos', videoRoutes);
+  app.use('/api/push', writeLimiter, pushRoutes);
+  app.use('/api/stories', writeLimiter, storyRoutes);
 
   const publicDir = path.join(__dirname, '..', 'public');
   const assetVersion = computeAssetVersion(publicDir);

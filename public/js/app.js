@@ -955,6 +955,8 @@
         await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        loadStories().catch(() => {});
+        setupPushNotifications().catch(() => {});
         await consumePendingInvite();
         go('/');
       } catch (err) {
@@ -985,6 +987,8 @@
         await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        loadStories().catch(() => {});
+        setupPushNotifications().catch(() => {});
         await consumePendingInvite();
         go('/');
       } catch (err) {
@@ -1727,9 +1731,31 @@
     if (inviteBtn) inviteBtn.onclick = () => openInviteShareModal(state.activeServer);
     const channels = state.activeServer.channels || [];
     const wrap2 = $('#channels');
-    wrap2.innerHTML = channels.map((c) => `<div class="channel-row ${c.id === state.activeChannel ? 'active' : ''}" data-channel="${escapeHTML(c.id)}"><span class="hash">#</span> ${escapeHTML(c.name)}</div>`).join('');
+    const activeVoice = state.voiceCh && state.voiceCh.active;
+    wrap2.innerHTML = channels.map((c) => {
+      const isVoice = c.type === 'voice';
+      const sigil = isVoice ? '<svg class="ic ic-sm"><use href="#i-mic"/></svg>' : '<span class="hash">#</span>';
+      const isActive = !isVoice && c.id === state.activeChannel;
+      const inVoice = isVoice && activeVoice && activeVoice.channelId === c.id;
+      return `<div class="channel-row ${isActive ? 'active' : ''} ${isVoice ? 'channel-voice' : ''} ${inVoice ? 'in-voice' : ''}" data-channel="${escapeHTML(c.id)}" data-channel-type="${escapeHTML(c.type || 'text')}">${sigil} ${escapeHTML(c.name)}${inVoice ? ' <span class="muted" style="margin-left:auto;font-size:11px">conectado</span>' : ''}</div>`;
+    }).join('');
     wrap2.querySelectorAll('.channel-row').forEach((row) => {
-      row.addEventListener('click', () => switchChannel(row.dataset.channel));
+      row.addEventListener('click', () => {
+        const t = row.dataset.channelType;
+        const id = row.dataset.channel;
+        if (t === 'voice') {
+          const ch = (state.activeServer.channels || []).find((c) => c.id === id);
+          if (!ch) return;
+          // toggle: leave if already in this voice channel
+          if (state.voiceCh && state.voiceCh.active && state.voiceCh.active.channelId === id) {
+            leaveVoiceChannel().catch(() => {});
+            return;
+          }
+          joinVoiceChannel(state.activeServer, ch).catch(() => {});
+        } else {
+          switchChannel(id);
+        }
+      });
     });
     const newCh = $('#newChannelBtn');
     if (newCh) newCh.onclick = openCreateChannelPrompt;
@@ -1750,11 +1776,15 @@
     const s = state.servers.find((x) => x.id === id);
     if (!s) return;
     state.activeServer = s;
-    state.activeChannel = (s.channels[0] || {}).id || null;
+    // First *text* channel — voice channels never become the read room.
+    const firstText = (s.channels || []).find((c) => c.type !== 'voice') || s.channels[0];
+    state.activeChannel = firstText ? firstText.id : null;
     renderDmList();
     renderServerRail();
     renderChannelList();
-    if (state.activeChannel) changeRoom(`srv-${s.id}-${state.activeChannel}`);
+    if (state.activeChannel && firstText && firstText.type !== 'voice') {
+      changeRoom(`srv-${s.id}-${state.activeChannel}`);
+    }
   }
   function switchChannel(channelId) {
     if (!state.activeServer) return;
@@ -2000,14 +2030,26 @@
     if (state.activeServer.ownerId !== state.me.id) { alert('Solo el owner crea canales'); return; }
     const name = prompt('Nombre del canal (sin #):');
     if (!name) return;
-    api(`/api/servers/${state.activeServer.id}/channels`, { method: 'POST', body: { name } })
+    // Quick prompt for channel type — keeps the existing flow simple while
+    // letting owners create voice channels without a separate UI.
+    const isVoice = confirm('¿Este canal es de VOZ? Aceptar = voz, Cancelar = texto');
+    const type = isVoice ? 'voice' : 'text';
+    api(`/api/servers/${state.activeServer.id}/channels`, { method: 'POST', body: { name, type } })
       .then((r) => {
         const idx = state.servers.findIndex((s) => s.id === r.server.id);
         if (idx >= 0) state.servers[idx] = r.server;
         state.activeServer = r.server;
-        state.activeChannel = r.server.channels[r.server.channels.length - 1].id;
-        renderChannelList();
-        changeRoom(`srv-${r.server.id}-${state.activeChannel}`);
+        const newCh = r.server.channels[r.server.channels.length - 1];
+        // Only auto-switch the room when the new channel is text. Voice
+        // channels need an explicit join (mic permission), so we just
+        // re-render the list and let the user click to join.
+        if (newCh && newCh.type !== 'voice') {
+          state.activeChannel = newCh.id;
+          renderChannelList();
+          changeRoom(`srv-${r.server.id}-${state.activeChannel}`);
+        } else {
+          renderChannelList();
+        }
       })
       .catch((e) => alert('Error: ' + e.message));
   }
@@ -2336,6 +2378,627 @@
     });
   }
 
+  // ============================================================
+  // Stories — 24h ephemeral image/video posts. Rail at top of chat
+  // view, full-screen viewer with auto-progress.
+  // ============================================================
+  state.stories = { groups: [], viewer: null };
+
+  async function loadStories() {
+    const rail = $('#storiesRail');
+    const row = $('#storiesRow');
+    if (!rail || !row) return;
+    try {
+      const r = await api('/api/stories');
+      state.stories.groups = r.groups || [];
+    } catch (_e) {
+      state.stories.groups = [];
+    }
+    renderStoriesRail();
+  }
+
+  function renderStoriesRail() {
+    const rail = $('#storiesRail');
+    const row = $('#storiesRow');
+    if (!rail || !row) return;
+    const groups = state.stories.groups || [];
+    // Hide rail entirely if there's nothing to show and the user can't post.
+    if (!groups.length && !state.me) { rail.classList.add('hidden'); return; }
+    rail.classList.remove('hidden');
+    row.innerHTML = '';
+    if (state.me) {
+      // "Add story" tile always first when logged in.
+      const myGroup = groups.find((g) => g.author.userId === state.me.id);
+      const tile = document.createElement('button');
+      tile.className = 'story-tile story-tile-add';
+      tile.type = 'button';
+      tile.title = 'Subir story';
+      const av = (state.me.avatarUrl || '').trim();
+      tile.innerHTML = `
+        <span class="story-ring ${myGroup && !myGroup.allSeen ? 'unseen' : (myGroup ? 'seen' : '')}">
+          <span class="story-avatar">${av ? `<img src="${escapeHTML(av)}" alt="">` : '<svg class="ic"><use href="#i-user"/></svg>'}</span>
+        </span>
+        <span class="story-tile-plus" aria-hidden="true">+</span>
+        <span class="story-tile-name">Tu story</span>`;
+      tile.onclick = () => {
+        if (myGroup) openStoryViewer(myGroup);
+        else openStoryUpload();
+      };
+      row.appendChild(tile);
+    }
+    for (const g of groups) {
+      if (state.me && g.author.userId === state.me.id) continue; // own already first
+      const tile = document.createElement('button');
+      tile.className = 'story-tile';
+      tile.type = 'button';
+      const av = (g.author.avatarUrl || '').trim();
+      tile.innerHTML = `
+        <span class="story-ring ${g.allSeen ? 'seen' : 'unseen'}">
+          <span class="story-avatar">${av ? `<img src="${escapeHTML(av)}" alt="">` : `<span class="story-avatar-letter">${escapeHTML((g.author.displayName || '?')[0] || '?')}</span>`}</span>
+        </span>
+        <span class="story-tile-name">${escapeHTML(g.author.displayName || g.author.username)}</span>`;
+      tile.onclick = () => openStoryViewer(g);
+      row.appendChild(tile);
+    }
+  }
+
+  function openStoryUpload() {
+    if (!state.me) { flashToast('Inicia sesi\u00f3n para subir stories'); return; }
+    const modal = $('#storyUploadModal');
+    const fileInput = $('#storyUploadInput');
+    const preview = $('#storyUploadPreview');
+    const captionInput = $('#storyCaptionInput');
+    const submitBtn = $('#storyUploadSubmit');
+    const errEl = $('#storyUploadError');
+    const closeBtn = $('#storyUploadClose');
+    const cancelBtn = $('#storyUploadCancel');
+    if (!modal || !fileInput) return;
+    let pending = null;
+    captionInput.value = '';
+    if (errEl) errEl.textContent = '';
+    submitBtn.disabled = true;
+    // reset preview area
+    preview.innerHTML = '';
+    const pickLabel = document.createElement('label');
+    pickLabel.className = 'story-upload-pick';
+    pickLabel.innerHTML = '<svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg><span>Elegir archivo</span>';
+    pickLabel.appendChild(fileInput);
+    fileInput.value = '';
+    preview.appendChild(pickLabel);
+    pickLabel.onclick = () => fileInput.click();
+
+    fileInput.onchange = () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      if (f.size > 30 * 1024 * 1024) {
+        errEl.textContent = 'Archivo muy grande (máx 30 MB)';
+        return;
+      }
+      pending = f;
+      submitBtn.disabled = false;
+      preview.innerHTML = '';
+      const url = URL.createObjectURL(f);
+      if (f.type.startsWith('video/')) {
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true;
+        preview.appendChild(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = url; img.alt = '';
+        preview.appendChild(img);
+      }
+      const change = document.createElement('button');
+      change.type = 'button';
+      change.className = 'story-upload-change';
+      change.textContent = 'Cambiar';
+      change.onclick = () => fileInput.click();
+      preview.appendChild(change);
+    };
+
+    submitBtn.onclick = async () => {
+      if (!pending) return;
+      submitBtn.disabled = true;
+      errEl.textContent = '';
+      try {
+        const fd = new FormData();
+        fd.append('media', pending);
+        fd.append('caption', (captionInput.value || '').slice(0, 200));
+        await api('/api/stories', { method: 'POST', body: fd });
+        hideModal('#storyUploadModal');
+        flashToast('Story publicada');
+        loadStories().catch(() => {});
+      } catch (e) {
+        errEl.textContent = e.message;
+        submitBtn.disabled = false;
+      }
+    };
+    if (closeBtn) closeBtn.onclick = () => hideModal('#storyUploadModal');
+    if (cancelBtn) cancelBtn.onclick = () => hideModal('#storyUploadModal');
+    showModal('#storyUploadModal');
+  }
+
+  function openStoryViewer(group) {
+    const viewer = $('#storyViewer');
+    if (!viewer || !group || !group.stories || !group.stories.length) return;
+    const v = state.stories.viewer = {
+      group,
+      idx: 0,
+      timer: 0,
+      started: 0,
+      progress: 0,
+      paused: false,
+    };
+    const renderSlide = async () => {
+      const s = v.group.stories[v.idx];
+      if (!s) return closeStoryViewer();
+      const media = $('#storyViewerMedia');
+      const cap = $('#storyViewerCaption');
+      const name = $('#storyViewerName');
+      const time = $('#storyViewerTime');
+      const av = $('#storyViewerAvatar');
+      const delBtn = $('#storyViewerDelete');
+      const bars = $('#storyViewerBars');
+      // bars
+      bars.innerHTML = '';
+      for (let i = 0; i < v.group.stories.length; i++) {
+        const b = document.createElement('div');
+        b.className = 'story-bar';
+        const fill = document.createElement('div');
+        fill.className = 'story-bar-fill';
+        if (i < v.idx) fill.style.width = '100%';
+        b.appendChild(fill);
+        bars.appendChild(b);
+      }
+      // header
+      name.textContent = group.author.displayName || group.author.username;
+      const ago = Math.max(1, Math.round((Date.now() - new Date(s.createdAt).getTime()) / 60000));
+      time.textContent = ago < 60 ? `${ago}m` : `${Math.round(ago / 60)}h`;
+      av.innerHTML = group.author.avatarUrl
+        ? `<img src="${escapeHTML(group.author.avatarUrl)}" alt="">`
+        : `<span class="story-avatar-letter">${escapeHTML((group.author.displayName || '?')[0] || '?')}</span>`;
+      cap.textContent = s.caption || '';
+      // delete only on own stories
+      if (state.me && group.author.userId === state.me.id) {
+        delBtn.classList.remove('hidden');
+        delBtn.onclick = async () => {
+          if (!confirm('¿Borrar esta story?')) return;
+          try {
+            await api(`/api/stories/${s.id}`, { method: 'DELETE' });
+            v.group.stories.splice(v.idx, 1);
+            if (!v.group.stories.length) { closeStoryViewer(); loadStories().catch(() => {}); return; }
+            if (v.idx >= v.group.stories.length) v.idx = v.group.stories.length - 1;
+            await renderSlide();
+            loadStories().catch(() => {});
+          } catch (e) { flashToast('No se pudo borrar: ' + e.message); }
+        };
+      } else {
+        delBtn.classList.add('hidden');
+      }
+      // media
+      media.innerHTML = '';
+      let durationMs = 5000;
+      if (s.mediaType === 'video') {
+        const el = document.createElement('video');
+        el.src = s.mediaUrl;
+        el.autoplay = true;
+        el.playsInline = true;
+        el.controls = false;
+        el.muted = false;
+        el.onended = () => nextSlide();
+        el.onloadedmetadata = () => {
+          const ms = Math.round((el.duration || 5) * 1000);
+          durationMs = Math.min(15000, Math.max(2000, ms));
+          startTimer(durationMs);
+        };
+        media.appendChild(el);
+      } else {
+        const img = document.createElement('img');
+        img.src = s.mediaUrl;
+        img.alt = '';
+        media.appendChild(img);
+        startTimer(5000);
+      }
+      // bump view count silently
+      api(`/api/stories/${s.id}/view`, { method: 'POST' }).catch(() => {});
+      // mark seen locally
+      s.seen = true;
+      v.group.allSeen = v.group.stories.every((x) => x.seen);
+    };
+    const startTimer = (ms) => {
+      clearTimer();
+      v.started = Date.now();
+      v.duration = ms;
+      const tick = () => {
+        if (v.paused) return;
+        const elapsed = Date.now() - v.started;
+        const pct = Math.min(100, (elapsed / ms) * 100);
+        const bar = $('#storyViewerBars').children[v.idx];
+        if (bar) bar.firstChild.style.width = pct + '%';
+        if (elapsed >= ms) return nextSlide();
+        v.timer = requestAnimationFrame(tick);
+      };
+      v.timer = requestAnimationFrame(tick);
+    };
+    const clearTimer = () => {
+      if (v.timer) cancelAnimationFrame(v.timer);
+      v.timer = 0;
+    };
+    const nextSlide = () => {
+      clearTimer();
+      v.idx += 1;
+      if (v.idx >= v.group.stories.length) {
+        // Go to next user with unseen stories, else close.
+        const groups = state.stories.groups || [];
+        const here = groups.findIndex((g) => g.author.userId === v.group.author.userId);
+        const after = groups.slice(here + 1).find((g) => !g.allSeen);
+        if (after) { state.stories.viewer.group = after; v.group = after; v.idx = 0; renderSlide(); return; }
+        closeStoryViewer(); renderStoriesRail(); return;
+      }
+      renderSlide();
+    };
+    const prevSlide = () => {
+      clearTimer();
+      v.idx = Math.max(0, v.idx - 1);
+      renderSlide();
+    };
+    $('#storyViewerNext').onclick = nextSlide;
+    $('#storyViewerPrev').onclick = prevSlide;
+    $('#storyViewerClose').onclick = closeStoryViewer;
+    state.stories.viewer.cleanup = clearTimer;
+    viewer.classList.remove('hidden');
+    document.body.classList.add('no-scroll');
+    renderSlide();
+  }
+
+  function closeStoryViewer() {
+    const viewer = $('#storyViewer');
+    if (viewer) viewer.classList.add('hidden');
+    document.body.classList.remove('no-scroll');
+    if (state.stories.viewer && state.stories.viewer.cleanup) state.stories.viewer.cleanup();
+    state.stories.viewer = null;
+    renderStoriesRail();
+  }
+
+  function setupStories() {
+    loadStories().catch(() => {});
+    // backdrop click on uploader closes
+    bindModalDismiss('#storyUploadModal', '#storyUploadClose');
+    // refresh once a minute (TTL ticks)
+    setInterval(() => { if (!document.hidden) loadStories().catch(() => {}); }, 60_000);
+  }
+
+  // ============================================================
+  // Web Push notifications. Registers `/sw.js` and asks for
+  // permission on first relevant interaction. Subscriptions are
+  // stored server-side and used by /api/messages on @mention/DM.
+  // ============================================================
+  state.push = { registration: null, subscription: null, publicKey: '' };
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  async function setupPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      state.push.registration = reg;
+    } catch (e) {
+      console.warn('SW register failed', e);
+      return;
+    }
+    // SW message handler — when user clicks a notification, route the SPA.
+    navigator.serviceWorker.addEventListener('message', (ev) => {
+      const d = ev.data || {};
+      if (d.type === 'notification:click' && d.data && d.data.url) {
+        try { go(d.data.url, true); } catch (_e) { /* ignore */ }
+      }
+    });
+    // If permission already granted and we have a subscription, refresh server.
+    try {
+      const r = await api('/api/push/key');
+      state.push.publicKey = r.publicKey || '';
+    } catch (_e) { /* not configured yet */ }
+    if (Notification.permission === 'granted' && state.me && state.push.publicKey) {
+      ensurePushSubscription().catch(() => {});
+    } else if (state.me && Notification.permission === 'default') {
+      // Show banner once per session.
+      try { if (sessionStorage.getItem('pushBannerDismissed') !== '1') showPushBanner(); } catch (_e) { showPushBanner(); }
+    }
+  }
+
+  function showPushBanner() {
+    const b = $('#pushBanner');
+    if (!b) return;
+    b.classList.remove('hidden');
+    const later = $('#pushBannerLater');
+    const enable = $('#pushBannerEnable');
+    if (later) later.onclick = () => {
+      b.classList.add('hidden');
+      try { sessionStorage.setItem('pushBannerDismissed', '1'); } catch (_e) { /* ignore */ }
+    };
+    if (enable) enable.onclick = async () => {
+      enable.disabled = true;
+      try {
+        const granted = await ensurePushSubscription();
+        if (granted) flashToast('Notificaciones activadas');
+        else flashToast('No se pudo activar (¿bloqueaste el permiso?)');
+      } finally {
+        enable.disabled = false;
+        b.classList.add('hidden');
+      }
+    };
+  }
+
+  async function ensurePushSubscription() {
+    if (!state.push.registration || !state.push.publicKey) return false;
+    if (Notification.permission === 'denied') return false;
+    if (Notification.permission === 'default') {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return false;
+    }
+    const reg = state.push.registration;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(state.push.publicKey),
+      });
+    }
+    state.push.subscription = sub;
+    try {
+      await api('/api/push/subscribe', {
+        method: 'POST',
+        body: { subscription: sub.toJSON() },
+      });
+    } catch (e) {
+      console.warn('push subscribe', e.message);
+      return false;
+    }
+    return true;
+  }
+
+  // ============================================================
+  // Voice channels (WebRTC mesh + Pusher signaling).
+  // Each peer creates an RTCPeerConnection per other peer; offer/
+  // answer/ICE candidates are exchanged via client-events on the
+  // presence-voice-{room} channel. Audio is rendered per remote
+  // peer with a hidden <audio>, the HUD shows who's connected.
+  // ============================================================
+  state.voiceCh = {
+    active: null,         // { serverId, channelId, channelName, room }
+    presence: null,       // Pusher presence channel
+    localStream: null,
+    peers: new Map(),     // userId -> { pc, audioEl, talking }
+    muted: false,
+  };
+
+  async function joinVoiceChannel(server, channel) {
+    if (!state.me) { flashToast('Inicia sesión para entrar a voz'); return; }
+    if (!state.pusher) { flashToast('Realtime no disponible'); return; }
+    if (state.voiceCh.active) await leaveVoiceChannel();
+    const room = `presence-voice-${server.id}-${channel.id}`;
+    state.voiceCh.active = { serverId: server.id, channelId: channel.id, channelName: channel.name, room };
+    // Acquire mic
+    try {
+      state.voiceCh.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+      flashToast('No se pudo acceder al micrófono');
+      state.voiceCh.active = null;
+      return;
+    }
+    // Subscribe to presence channel for signaling.
+    const ch = state.pusher.subscribe(room);
+    state.voiceCh.presence = ch;
+    ch.bind('pusher:subscription_succeeded', (members) => {
+      // For each existing peer (not us), initiate an offer.
+      members.each((m) => {
+        if (m.id !== members.myID) initiatePeer(m.id, true);
+      });
+      showVoiceHud();
+    });
+    ch.bind('pusher:member_added', (m) => {
+      // Existing members do NOT initiate to a new joiner — the joiner
+      // initiates outward to everyone in subscription_succeeded above.
+      // But we need to be ready to receive their offer.
+      addVoiceHudMember(m.id, m.info);
+    });
+    ch.bind('pusher:member_removed', (m) => {
+      tearDownPeer(m.id);
+      removeVoiceHudMember(m.id);
+    });
+    // Custom signaling events (client-events on presence channels).
+    ch.bind('client-rtc-offer', (data) => {
+      if (!data || data.to !== getOwnPresenceId()) return;
+      receiveOffer(data.from, data.sdp);
+    });
+    ch.bind('client-rtc-answer', (data) => {
+      if (!data || data.to !== getOwnPresenceId()) return;
+      receiveAnswer(data.from, data.sdp);
+    });
+    ch.bind('client-rtc-ice', (data) => {
+      if (!data || data.to !== getOwnPresenceId()) return;
+      const peer = state.voiceCh.peers.get(data.from);
+      if (peer && data.candidate) {
+        peer.pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+      }
+    });
+  }
+
+  function getOwnPresenceId() {
+    return state.me ? state.me.id : '';
+  }
+
+  function makePeerConnection(remoteId) {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const audioEl = document.createElement('audio');
+    audioEl.autoplay = true;
+    audioEl.playsInline = true;
+    document.body.appendChild(audioEl);
+    pc.ontrack = (ev) => {
+      audioEl.srcObject = ev.streams[0];
+    };
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate && state.voiceCh.presence) {
+        state.voiceCh.presence.trigger('client-rtc-ice', {
+          from: getOwnPresenceId(),
+          to: remoteId,
+          candidate: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate,
+        });
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+        tearDownPeer(remoteId);
+      }
+    };
+    if (state.voiceCh.localStream) {
+      for (const track of state.voiceCh.localStream.getTracks()) {
+        pc.addTrack(track, state.voiceCh.localStream);
+      }
+    }
+    state.voiceCh.peers.set(remoteId, { pc, audioEl });
+    return pc;
+  }
+
+  async function initiatePeer(remoteId, asCaller) {
+    if (state.voiceCh.peers.has(remoteId)) return;
+    const pc = makePeerConnection(remoteId);
+    if (!asCaller) return; // remote is caller; we wait for their offer
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      state.voiceCh.presence.trigger('client-rtc-offer', {
+        from: getOwnPresenceId(),
+        to: remoteId,
+        sdp: pc.localDescription,
+      });
+    } catch (e) { console.warn('rtc offer', e); }
+  }
+
+  async function receiveOffer(remoteId, sdp) {
+    let entry = state.voiceCh.peers.get(remoteId);
+    if (!entry) {
+      const pc = makePeerConnection(remoteId);
+      entry = state.voiceCh.peers.get(remoteId);
+      if (!entry) entry = { pc };
+    }
+    try {
+      await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const ans = await entry.pc.createAnswer();
+      await entry.pc.setLocalDescription(ans);
+      state.voiceCh.presence.trigger('client-rtc-answer', {
+        from: getOwnPresenceId(),
+        to: remoteId,
+        sdp: entry.pc.localDescription,
+      });
+    } catch (e) { console.warn('rtc answer', e); }
+  }
+
+  async function receiveAnswer(remoteId, sdp) {
+    const peer = state.voiceCh.peers.get(remoteId);
+    if (!peer) return;
+    try {
+      await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch (e) { console.warn('rtc set answer', e); }
+  }
+
+  function tearDownPeer(remoteId) {
+    const peer = state.voiceCh.peers.get(remoteId);
+    if (!peer) return;
+    try { peer.pc.close(); } catch (_e) { /* ignore */ }
+    if (peer.audioEl && peer.audioEl.parentNode) peer.audioEl.parentNode.removeChild(peer.audioEl);
+    state.voiceCh.peers.delete(remoteId);
+    removeVoiceHudMember(remoteId);
+  }
+
+  async function leaveVoiceChannel() {
+    const v = state.voiceCh;
+    if (!v.active) return;
+    if (v.presence) {
+      try { state.pusher.unsubscribe(v.active.room); } catch (_e) { /* ignore */ }
+      v.presence = null;
+    }
+    for (const id of [...v.peers.keys()]) tearDownPeer(id);
+    if (v.localStream) {
+      for (const t of v.localStream.getTracks()) try { t.stop(); } catch (_e) { /* ignore */ }
+      v.localStream = null;
+    }
+    v.active = null;
+    v.muted = false;
+    hideVoiceHud();
+  }
+
+  function showVoiceHud() {
+    const hud = $('#voiceHud');
+    if (!hud) return;
+    hud.classList.remove('hidden');
+    const name = $('#voiceHudChannelName');
+    if (name && state.voiceCh.active) name.textContent = '# ' + state.voiceCh.active.channelName;
+    const muteBtn = $('#voiceHudMute');
+    if (muteBtn) muteBtn.onclick = toggleVoiceMute;
+    const leaveBtn = $('#voiceHudLeave');
+    if (leaveBtn) leaveBtn.onclick = () => leaveVoiceChannel();
+    refreshVoiceHudMembers();
+  }
+
+  function hideVoiceHud() {
+    const hud = $('#voiceHud');
+    if (hud) hud.classList.add('hidden');
+  }
+
+  function refreshVoiceHudMembers() {
+    const ul = $('#voiceHudMembers');
+    if (!ul) return;
+    ul.innerHTML = '';
+    const presence = state.voiceCh.presence;
+    if (!presence || !presence.members) return;
+    presence.members.each((m) => {
+      addVoiceHudMember(m.id, m.info);
+    });
+  }
+
+  function addVoiceHudMember(id, info) {
+    const ul = $('#voiceHudMembers');
+    if (!ul) return;
+    if (ul.querySelector(`[data-uid="${CSS.escape(id)}"]`)) return;
+    const li = document.createElement('div');
+    li.className = 'voice-hud-member';
+    li.dataset.uid = id;
+    const av = (info && info.avatarUrl) || '';
+    const name = (info && info.displayName) || (info && info.username) || 'Usuario';
+    li.innerHTML = `${av ? `<img class="voice-hud-avatar" src="${escapeHTML(av)}" alt="">` : '<span class="voice-hud-avatar-fallback"></span>'}<span class="voice-hud-name">${escapeHTML(name)}</span>`;
+    ul.appendChild(li);
+  }
+
+  function removeVoiceHudMember(id) {
+    const ul = $('#voiceHudMembers');
+    if (!ul) return;
+    const el = ul.querySelector(`[data-uid="${CSS.escape(id)}"]`);
+    if (el) el.remove();
+  }
+
+  function toggleVoiceMute() {
+    const v = state.voiceCh;
+    if (!v.localStream) return;
+    v.muted = !v.muted;
+    for (const t of v.localStream.getAudioTracks()) t.enabled = !v.muted;
+    const btn = $('#voiceHudMute');
+    if (btn) btn.classList.toggle('on', v.muted);
+  }
+
+  function setupVoiceChannels() {
+    // Cleanup on tab close so we don't ghost in the channel.
+    window.addEventListener('beforeunload', () => {
+      if (state.voiceCh.active) leaveVoiceChannel();
+    });
+  }
+
   // ----- Boot -----
   async function boot() {
     setupNav();
@@ -2373,6 +3036,9 @@
     setupDmControls();
     setupMobileDrawer();
     setupHeaderSearch();
+    setupStories();
+    setupVoiceChannels();
+    setupPushNotifications().catch(() => {});
   }
 
   // ============================================================

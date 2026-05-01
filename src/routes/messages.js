@@ -43,7 +43,8 @@ function makeBotAuthor() {
 
 async function pushMentionNotifications(payload, mentions, broadcastRoom) {
   if (!mentions || mentions.length === 0) return;
-  const users = await User.find({ username: { $in: mentions } });
+  const { pushToUser } = require('../lib/webpush');
+  const users = await User.find({ username: { $in: mentions } }).select('+pushSubscriptions');
   for (const u of users) {
     const note = {
       type: 'mention',
@@ -61,12 +62,19 @@ async function pushMentionNotifications(payload, mentions, broadcastRoom) {
     } catch (e) {
       console.warn('save notif', e.message);
     }
-    // realtime push to that user only
+    // realtime push to that user only (in-app toast / badge bump)
     broadcast(`private-user-${u._id.toString()}`, 'notification:new', {
       ...note,
       msgId: note.msgId,
       createdAt: note.createdAt,
     }).catch((e) => console.warn('push notif', e.message));
+    // Web Push fan-out (delivers even when the tab is closed).
+    pushToUser(u, {
+      title: `${note.fromDisplayName} te mencion\u00f3`,
+      body: note.text,
+      tag: `mention-${payload.id}`,
+      data: { url: '/', room: payload.room, msgId: payload.id },
+    }).catch(() => {});
   }
 }
 
@@ -289,6 +297,26 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
       pushMentionNotifications(userPayload, mentions, room).catch((e) =>
         console.warn('mention notif', e.message),
       );
+      // DM Web Push: when this is a DM and the recipient isn't the sender,
+      // notify their devices so they get pinged even with the tab closed.
+      if (room.startsWith('dm-') && req.user) {
+        try {
+          const ids = room.replace(/^dm-/, '').split('-');
+          const other = ids.find((id) => id !== req.user.id);
+          if (other) {
+            const { pushToUser } = require('../lib/webpush');
+            const recip = await User.findById(other).select('+pushSubscriptions');
+            if (recip) {
+              pushToUser(recip, {
+                title: `${userPayload.author.displayName} te envi\u00f3 un DM`,
+                body: (userPayload.text || '').slice(0, 140) || (imageUrl ? '\ud83d\uddbc Imagen' : (audioUrl ? '\ud83c\udfa4 Nota de voz' : 'Nuevo mensaje')),
+                tag: `dm-${room}`,
+                data: { url: '/', room, msgId: userPayload.id },
+              }).catch(() => {});
+            }
+          }
+        } catch (e) { console.warn('dm push', e.message); }
+      }
       // Stats + achievements (registered users only)
       if (req.user) {
         try {
@@ -334,29 +362,75 @@ router.post('/', authOptional, sendLimiter, upload, async (req, res) => {
       const prompt = ubrebot.stripMention(modText);
       // Tell the room UbreBot is "typing" so the UI shows the indicator immediately.
       await broadcast(`room-${room}`, 'bot:typing', { botName: 'UbreBot', at: Date.now() }).catch(() => {});
+      const ubre = {
+        userId: null,
+        username: ubrebot.UBREBOT_USERNAME,
+        displayName: 'UbreBot',
+        avatarUrl: '',
+        color: '#22c55e',
+        decoration: 'aurora',
+        effect: 'pulse',
+        nameFont: 'default',
+        anonymous: false,
+        bot: true,
+      };
+      const baseReplyTo = {
+        id: userPayload.id,
+        authorDisplayName: author.displayName,
+        authorColor: author.color,
+        snippet: (modText || '').slice(0, 140),
+        snippetImage: '',
+      };
+      // Image generation intent: "dibuja X", "/imagen X", etc.
+      const imgPrompt = ubrebot.extractImagePrompt(prompt);
+      // Summarize intent: "/resumir", "resumime", etc.
+      const wantsSummary = ubrebot.isSummarizeIntent(prompt);
       try {
-        const reply = await ubrebot.ask(prompt, { displayName: author.displayName });
-        const ubre = {
-          userId: null,
-          username: ubrebot.UBREBOT_USERNAME,
-          displayName: 'UbreBot',
-          avatarUrl: '',
-          color: '#22c55e',
-          decoration: 'aurora',
-          effect: 'pulse',
-          nameFont: 'default',
-          anonymous: false,
-          bot: true,
-        };
-        const ubreMsg = await Message.create({
-          text: reply,
-          kind: 'system',
-          author: ubre,
-          room,
-          replyTo: { id: userPayload.id, authorDisplayName: author.displayName, authorColor: author.color, snippet: (modText || '').slice(0, 140), snippetImage: '' },
-        });
-        ubrePayload = ubreMsg.toClientJSON();
-        await broadcast(`room-${room}`, 'message:new', ubrePayload);
+        if (imgPrompt) {
+          const url = ubrebot.buildImageUrl(imgPrompt);
+          const ubreMsg = await Message.create({
+            text: `\u2728 dibujado: *${imgPrompt}*`,
+            imageUrl: url,
+            kind: 'system',
+            author: ubre,
+            room,
+            replyTo: baseReplyTo,
+          });
+          ubrePayload = ubreMsg.toClientJSON();
+          await broadcast(`room-${room}`, 'message:new', ubrePayload);
+        } else if (wantsSummary) {
+          // Pull the last 50 messages from this room (excluding the current
+          // request and any prior bot output) and ask Cerebras to recap.
+          const recent = await Message.find({ room, _id: { $ne: userPayload.id } })
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .select('text author kind')
+            .lean();
+          const ordered = recent
+            .filter((m) => m.kind !== 'system')
+            .reverse();
+          const reply = await ubrebot.summarize(ordered, { displayName: author.displayName });
+          const ubreMsg = await Message.create({
+            text: reply,
+            kind: 'system',
+            author: ubre,
+            room,
+            replyTo: baseReplyTo,
+          });
+          ubrePayload = ubreMsg.toClientJSON();
+          await broadcast(`room-${room}`, 'message:new', ubrePayload);
+        } else {
+          const reply = await ubrebot.ask(prompt, { displayName: author.displayName });
+          const ubreMsg = await Message.create({
+            text: reply,
+            kind: 'system',
+            author: ubre,
+            room,
+            replyTo: baseReplyTo,
+          });
+          ubrePayload = ubreMsg.toClientJSON();
+          await broadcast(`room-${room}`, 'message:new', ubrePayload);
+        }
       } catch (e) {
         console.warn('ubrebot reply', e.message);
       }
