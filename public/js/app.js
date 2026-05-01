@@ -2527,10 +2527,19 @@
       started: 0,
       progress: 0,
       paused: false,
+      // Per-slide token; bumped on every nextSlide/renderSlide so late events
+      // from a previous slide (e.g. video onended after we already advanced)
+      // can be ignored.
+      slideToken: 0,
     };
     const renderSlide = async () => {
       const s = v.group.stories[v.idx];
       if (!s) return closeStoryViewer();
+      // Capture the token for this slide so late callbacks (rAF after
+      // cancel, video onended after replacement) can detect they are
+      // stale and bail out.
+      v.slideToken += 1;
+      const token = v.slideToken;
       const media = $('#storyViewerMedia');
       const cap = $('#storyViewerCaption');
       const name = $('#storyViewerName');
@@ -2549,16 +2558,19 @@
         b.appendChild(fill);
         bars.appendChild(b);
       }
-      // header
-      name.textContent = group.author.displayName || group.author.username;
+      // header — use v.group (mutable) not the captured `group`, otherwise
+      // auto-advance to another user's stories shows the wrong author info
+      // (and the delete button could appear on someone else's story).
+      const author = v.group.author;
+      name.textContent = author.displayName || author.username;
       const ago = Math.max(1, Math.round((Date.now() - new Date(s.createdAt).getTime()) / 60000));
       time.textContent = ago < 60 ? `${ago}m` : `${Math.round(ago / 60)}h`;
-      av.innerHTML = group.author.avatarUrl
-        ? `<img src="${escapeHTML(group.author.avatarUrl)}" alt="">`
-        : `<span class="story-avatar-letter">${escapeHTML((group.author.displayName || '?')[0] || '?')}</span>`;
+      av.innerHTML = author.avatarUrl
+        ? `<img src="${escapeHTML(author.avatarUrl)}" alt="">`
+        : `<span class="story-avatar-letter">${escapeHTML((author.displayName || '?')[0] || '?')}</span>`;
       cap.textContent = s.caption || '';
       // delete only on own stories
-      if (state.me && group.author.userId === state.me.id) {
+      if (state.me && author.userId === state.me.id) {
         delBtn.classList.remove('hidden');
         delBtn.onclick = async () => {
           if (!confirm('¿Borrar esta story?')) return;
@@ -2584,7 +2596,13 @@
         el.playsInline = true;
         el.controls = false;
         el.muted = false;
-        el.onended = () => nextSlide();
+        // Both onended (video finished) and the rAF timer (driven by
+        // duration metadata) call nextSlide. Use the slide token so the
+        // first one to fire wins and the other becomes a no-op.
+        el.onended = () => {
+          if (token !== v.slideToken) return;
+          nextSlide();
+        };
         el.onloadedmetadata = () => {
           const ms = Math.round((el.duration || 5) * 1000);
           durationMs = Math.min(15000, Math.max(2000, ms));
@@ -2608,7 +2626,11 @@
       clearTimer();
       v.started = Date.now();
       v.duration = ms;
+      // Pin token: tick belongs to whichever slide started this timer.
+      // If the slide changes underneath us, abort silently.
+      const myToken = v.slideToken;
       const tick = () => {
+        if (myToken !== v.slideToken) return;
         if (v.paused) return;
         const elapsed = Date.now() - v.started;
         const pct = Math.min(100, (elapsed / ms) * 100);
@@ -2683,6 +2705,17 @@
     return out;
   }
 
+  // Single SW message handler reference so addEventListener naturally
+  // deduplicates across multiple setupPushNotifications() calls (boot,
+  // login, register). Each call would otherwise add a fresh anonymous
+  // listener and notification clicks would route the SPA N times.
+  function onSwMessage(ev) {
+    const d = ev.data || {};
+    if (d.type === 'notification:click' && d.data && d.data.url) {
+      try { go(d.data.url, true); } catch (_e) { /* ignore */ }
+    }
+  }
+
   async function setupPushNotifications() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
@@ -2692,13 +2725,9 @@
       console.warn('SW register failed', e);
       return;
     }
-    // SW message handler — when user clicks a notification, route the SPA.
-    navigator.serviceWorker.addEventListener('message', (ev) => {
-      const d = ev.data || {};
-      if (d.type === 'notification:click' && d.data && d.data.url) {
-        try { go(d.data.url, true); } catch (_e) { /* ignore */ }
-      }
-    });
+    // SW message handler — same reference each call so addEventListener
+    // dedupes (no-op when already attached).
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
     // If permission already granted and we have a subscription, refresh server.
     try {
       const r = await api('/api/push/key');
@@ -2784,6 +2813,8 @@
     if (state.voiceCh.active) await leaveVoiceChannel();
     const room = `presence-voice-${server.id}-${channel.id}`;
     state.voiceCh.active = { serverId: server.id, channelId: channel.id, channelName: channel.name, room };
+    // Re-render so the channel row picks up the in-voice/conectado state.
+    try { renderChannelList(); } catch (_e) { /* ignore */ }
     // Acquire mic
     try {
       state.voiceCh.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -2932,6 +2963,8 @@
     v.active = null;
     v.muted = false;
     hideVoiceHud();
+    // Refresh channel list so the 'conectado' badge disappears.
+    try { renderChannelList(); } catch (_e) { /* ignore */ }
   }
 
   function showVoiceHud() {
