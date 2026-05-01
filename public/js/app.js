@@ -2688,7 +2688,15 @@
     const viewer = $('#storyViewer');
     if (viewer) viewer.classList.add('hidden');
     document.body.classList.remove('no-scroll');
-    if (state.stories.viewer && state.stories.viewer.cleanup) state.stories.viewer.cleanup();
+    if (state.stories.viewer) {
+      // Invalidate any in-flight slide callbacks (video onended/onerror,
+      // queued rAF ticks). They captured the viewer object and check
+      // their own token against v.slideToken — bumping it here makes
+      // those late firings no-ops, which avoids a TypeError when the
+      // user closes the viewer mid-video.
+      state.stories.viewer.slideToken += 1;
+      if (state.stories.viewer.cleanup) state.stories.viewer.cleanup();
+    }
     state.stories.viewer = null;
     renderStoriesRail();
   }
