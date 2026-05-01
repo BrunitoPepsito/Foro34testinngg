@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const ChannelSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, maxlength: 32 },
-    type: { type: String, default: 'text', enum: ['text', 'announce'] },
+    type: { type: String, default: 'text', enum: ['text', 'announce', 'voice'] },
     topic: { type: String, default: '', maxlength: 200 },
     createdAt: { type: Date, default: Date.now },
   },
