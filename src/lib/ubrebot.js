@@ -171,4 +171,71 @@ function stripMention(text) {
   return text.replace(/(^|\s)@ubrebot\b/gi, '$1').trim();
 }
 
-module.exports = { ask, isMentioned, stripMention, UBREBOT_USERNAME };
+// Intent detection: image generation. Triggers on Spanish/English keywords
+// at the start of the prompt OR with explicit slash command. Returns the
+// raw image prompt (everything after the verb) or null.
+const IMAGE_VERBS = /^\s*(?:\/(?:imagen|image|draw|dibuja|dibujar|paint)\b|(?:dibuja|dibujame|dibujale|imaginate|imagina|imag(?:e|en|inate)|draw|paint|gener[ao]\s+(?:una\s+)?(?:imagen|foto)|crea\s+(?:una\s+)?(?:imagen|foto))\b)\s*[:,.-]?\s*/i;
+function extractImagePrompt(text) {
+  if (!text) return null;
+  const m = String(text).match(IMAGE_VERBS);
+  if (!m) return null;
+  const rest = String(text).slice(m[0].length).trim();
+  if (!rest || rest.length < 2) return null;
+  // Cap at 300 chars — Pollinations URL gets unwieldy past that.
+  return rest.slice(0, 300);
+}
+
+// Pollinations.ai is keyless and free — encodes the prompt directly into the
+// URL. We add a random seed so retries don't return the cached image.
+function buildImageUrl(prompt) {
+  const safe = encodeURIComponent(prompt.replace(/\s+/g, ' ').trim());
+  const seed = Math.floor(Math.random() * 1e9);
+  return `https://image.pollinations.ai/prompt/${safe}?width=1024&height=1024&seed=${seed}&nologo=true`;
+}
+
+// Intent detection: summarize the recent chat.
+const SUMMARIZE_VERBS = /^\s*(?:\/(?:resumir|summary|resume|tldr)\b|(?:resum[ie]me|resumime|tldr|res\u00famime|resume|recapitula|recap)\b)\s*[:,.-]?\s*/i;
+function isSummarizeIntent(text) {
+  if (!text) return false;
+  return SUMMARIZE_VERBS.test(String(text));
+}
+
+// Build a summary using the Cerebras backend, given the last N messages.
+// `messages` is an array of `{ author, text }` objects in chronological order.
+async function summarize(messages, context = {}) {
+  const apiKey = process.env.CEREBRAS_API_KEY;
+  if (!apiKey) return 'No tengo CEREBRAS_API_KEY cargada, av\u00edsale al admin. \u2728';
+  const lines = (messages || [])
+    .filter((m) => m && m.text)
+    .slice(-50)
+    .map((m) => {
+      const who = (m.author && (m.author.displayName || m.author.username)) || 'alguien';
+      return `${who}: ${String(m.text).slice(0, 280)}`;
+    });
+  if (!lines.length) return 'No hay nada para resumir, este chat est\u00e1 m\u00e1s muerto que mi vida amorosa.';
+  const prompt = [
+    'Resum\u00ed esta conversaci\u00f3n del chat en 3-5 bullets cortos, en espa\u00f1ol latino, con tu onda sarc\u00e1stica.',
+    'Bullet \u2192 empieza con "\u2022 ".',
+    'No saludes ni te despidas.',
+    '',
+    '--- CHAT ---',
+    lines.join('\n'),
+    '--- FIN ---',
+  ].join('\n');
+  try {
+    return await callCerebrasWithRetries(apiKey, prompt, context.displayName ? `Te est\u00e1 hablando ${context.displayName}.` : '');
+  } catch (err) {
+    return 'Mi cerebro se trab\u00f3 resumiendo eso, prob\u00e1 de nuevo en un toque \ud83d\ude2c';
+  }
+}
+
+module.exports = {
+  ask,
+  isMentioned,
+  stripMention,
+  UBREBOT_USERNAME,
+  extractImagePrompt,
+  buildImageUrl,
+  isSummarizeIntent,
+  summarize,
+};

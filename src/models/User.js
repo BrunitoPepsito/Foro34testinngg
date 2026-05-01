@@ -145,6 +145,24 @@ const UserSchema = new mongoose.Schema(
 
     pinnedMessageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     notifications: { type: [NotificationSchema], default: [] },
+    pushSubscriptions: {
+      // Web Push subscriptions registered by the user's browsers. We store the
+      // endpoint + keys raw because that's what the `web-push` lib needs.
+      type: [
+        new mongoose.Schema(
+          {
+            endpoint: { type: String, required: true },
+            p256dh: { type: String, required: true },
+            auth: { type: String, required: true },
+            ua: { type: String, default: '', maxlength: 200 },
+            createdAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+      select: false, // don't ship secrets to the client by default
+    },
     stickers: { type: [StickerSchema], default: [] },
     achievements: { type: [AchievementSchema], default: [] },
     stats: {

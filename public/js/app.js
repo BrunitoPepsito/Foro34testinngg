@@ -955,6 +955,8 @@
         await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        loadStories().catch(() => {});
+        setupPushNotifications().catch(() => {});
         await consumePendingInvite();
         go('/');
       } catch (err) {
@@ -985,6 +987,8 @@
         await loadServers().catch(() => {});
         loadDms().catch(() => {});
         loadStickers().catch(() => {});
+        loadStories().catch(() => {});
+        setupPushNotifications().catch(() => {});
         await consumePendingInvite();
         go('/');
       } catch (err) {
@@ -2336,6 +2340,440 @@
     });
   }
 
+  // ============================================================
+  // Stories — 24h ephemeral image/video posts. Rail at top of chat
+  // view, full-screen viewer with auto-progress.
+  // ============================================================
+  state.stories = { groups: [], viewer: null };
+
+  async function loadStories() {
+    const rail = $('#storiesRail');
+    const row = $('#storiesRow');
+    if (!rail || !row) return;
+    try {
+      const r = await api('/api/stories');
+      state.stories.groups = r.groups || [];
+    } catch (_e) {
+      state.stories.groups = [];
+    }
+    renderStoriesRail();
+  }
+
+  function renderStoriesRail() {
+    const rail = $('#storiesRail');
+    const row = $('#storiesRow');
+    if (!rail || !row) return;
+    const groups = state.stories.groups || [];
+    // Hide rail entirely if there's nothing to show and the user can't post.
+    if (!groups.length && !state.me) { rail.classList.add('hidden'); return; }
+    rail.classList.remove('hidden');
+    row.innerHTML = '';
+    if (state.me) {
+      // "Add story" tile always first when logged in.
+      const myGroup = groups.find((g) => g.author.userId === state.me.id);
+      const tile = document.createElement('button');
+      tile.className = 'story-tile story-tile-add';
+      tile.type = 'button';
+      tile.title = 'Subir story';
+      const av = (state.me.avatarUrl || '').trim();
+      tile.innerHTML = `
+        <span class="story-ring ${myGroup && !myGroup.allSeen ? 'unseen' : (myGroup ? 'seen' : '')}">
+          <span class="story-avatar">${av ? `<img src="${escapeHTML(av)}" alt="">` : '<svg class="ic"><use href="#i-user"/></svg>'}</span>
+        </span>
+        <span class="story-tile-plus" aria-hidden="true">+</span>
+        <span class="story-tile-name">Tu story</span>`;
+      tile.onclick = () => {
+        if (myGroup) openStoryViewer(myGroup);
+        else openStoryUpload();
+      };
+      row.appendChild(tile);
+    }
+    for (const g of groups) {
+      if (state.me && g.author.userId === state.me.id) continue; // own already first
+      const tile = document.createElement('button');
+      tile.className = 'story-tile';
+      tile.type = 'button';
+      const av = (g.author.avatarUrl || '').trim();
+      tile.innerHTML = `
+        <span class="story-ring ${g.allSeen ? 'seen' : 'unseen'}">
+          <span class="story-avatar">${av ? `<img src="${escapeHTML(av)}" alt="">` : `<span class="story-avatar-letter">${escapeHTML((g.author.displayName || '?')[0] || '?')}</span>`}</span>
+        </span>
+        <span class="story-tile-name">${escapeHTML(g.author.displayName || g.author.username)}</span>`;
+      tile.onclick = () => openStoryViewer(g);
+      row.appendChild(tile);
+    }
+  }
+
+  function openStoryUpload() {
+    if (!state.me) { flashToast('Inicia sesi\u00f3n para subir stories'); return; }
+    const modal = $('#storyUploadModal');
+    const fileInput = $('#storyUploadInput');
+    const preview = $('#storyUploadPreview');
+    const captionInput = $('#storyCaptionInput');
+    const submitBtn = $('#storyUploadSubmit');
+    const errEl = $('#storyUploadError');
+    const closeBtn = $('#storyUploadClose');
+    const cancelBtn = $('#storyUploadCancel');
+    if (!modal || !fileInput) return;
+    let pending = null;
+    captionInput.value = '';
+    if (errEl) errEl.textContent = '';
+    submitBtn.disabled = true;
+    // The file input lives outside #storyUploadPreview in the HTML so we
+    // can freely wipe the preview between picks without detaching it.
+    fileInput.value = '';
+    const renderPicker = () => {
+      preview.innerHTML = '';
+      const pickLabel = document.createElement('button');
+      pickLabel.type = 'button';
+      pickLabel.className = 'story-upload-pick';
+      pickLabel.innerHTML = '<svg class="ic ic-lg" aria-hidden="true"><use href="#i-image"/></svg><span>Elegir archivo</span>';
+      pickLabel.onclick = () => fileInput.click();
+      preview.appendChild(pickLabel);
+    };
+    renderPicker();
+
+    fileInput.onchange = () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      if (f.size > 30 * 1024 * 1024) {
+        errEl.textContent = 'Archivo muy grande (m\u00e1x 30 MB)';
+        return;
+      }
+      pending = f;
+      submitBtn.disabled = false;
+      preview.innerHTML = '';
+      const url = URL.createObjectURL(f);
+      if (f.type.startsWith('video/')) {
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true;
+        preview.appendChild(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = url; img.alt = '';
+        preview.appendChild(img);
+      }
+      const change = document.createElement('button');
+      change.type = 'button';
+      change.className = 'story-upload-change';
+      change.textContent = 'Cambiar';
+      change.onclick = () => fileInput.click();
+      preview.appendChild(change);
+    };
+
+    submitBtn.onclick = async () => {
+      if (!pending) return;
+      submitBtn.disabled = true;
+      errEl.textContent = '';
+      try {
+        const fd = new FormData();
+        fd.append('media', pending);
+        fd.append('caption', (captionInput.value || '').slice(0, 200));
+        await api('/api/stories', { method: 'POST', body: fd });
+        hideModal('#storyUploadModal');
+        flashToast('Story publicada');
+        loadStories().catch(() => {});
+      } catch (e) {
+        errEl.textContent = e.message;
+        submitBtn.disabled = false;
+      }
+    };
+    if (closeBtn) closeBtn.onclick = () => hideModal('#storyUploadModal');
+    if (cancelBtn) cancelBtn.onclick = () => hideModal('#storyUploadModal');
+    showModal('#storyUploadModal');
+  }
+
+  function openStoryViewer(group) {
+    const viewer = $('#storyViewer');
+    if (!viewer || !group || !group.stories || !group.stories.length) return;
+    const v = state.stories.viewer = {
+      group,
+      idx: 0,
+      timer: 0,
+      started: 0,
+      progress: 0,
+      paused: false,
+      // Per-slide token; bumped on every nextSlide/renderSlide so late events
+      // from a previous slide (e.g. video onended after we already advanced)
+      // can be ignored.
+      slideToken: 0,
+    };
+    const renderSlide = async () => {
+      const s = v.group.stories[v.idx];
+      if (!s) return closeStoryViewer();
+      // Capture the token for this slide so late callbacks (rAF after
+      // cancel, video onended after replacement) can detect they are
+      // stale and bail out.
+      v.slideToken += 1;
+      const token = v.slideToken;
+      const media = $('#storyViewerMedia');
+      const cap = $('#storyViewerCaption');
+      const name = $('#storyViewerName');
+      const time = $('#storyViewerTime');
+      const av = $('#storyViewerAvatar');
+      const delBtn = $('#storyViewerDelete');
+      const bars = $('#storyViewerBars');
+      // bars
+      bars.innerHTML = '';
+      for (let i = 0; i < v.group.stories.length; i++) {
+        const b = document.createElement('div');
+        b.className = 'story-bar';
+        const fill = document.createElement('div');
+        fill.className = 'story-bar-fill';
+        if (i < v.idx) fill.style.width = '100%';
+        b.appendChild(fill);
+        bars.appendChild(b);
+      }
+      // header — use v.group (mutable) not the captured `group`, otherwise
+      // auto-advance to another user's stories shows the wrong author info
+      // (and the delete button could appear on someone else's story).
+      const author = v.group.author;
+      name.textContent = author.displayName || author.username;
+      const ago = Math.max(1, Math.round((Date.now() - new Date(s.createdAt).getTime()) / 60000));
+      time.textContent = ago < 60 ? `${ago}m` : `${Math.round(ago / 60)}h`;
+      av.innerHTML = author.avatarUrl
+        ? `<img src="${escapeHTML(author.avatarUrl)}" alt="">`
+        : `<span class="story-avatar-letter">${escapeHTML((author.displayName || '?')[0] || '?')}</span>`;
+      cap.textContent = s.caption || '';
+      // delete only on own stories
+      if (state.me && author.userId === state.me.id) {
+        delBtn.classList.remove('hidden');
+        delBtn.onclick = async () => {
+          if (!confirm('¿Borrar esta story?')) return;
+          try {
+            await api(`/api/stories/${s.id}`, { method: 'DELETE' });
+            v.group.stories.splice(v.idx, 1);
+            if (!v.group.stories.length) { closeStoryViewer(); loadStories().catch(() => {}); return; }
+            if (v.idx >= v.group.stories.length) v.idx = v.group.stories.length - 1;
+            await renderSlide();
+            loadStories().catch(() => {});
+          } catch (e) { flashToast('No se pudo borrar: ' + e.message); }
+        };
+      } else {
+        delBtn.classList.add('hidden');
+      }
+      // media
+      media.innerHTML = '';
+      let durationMs = 5000;
+      if (s.mediaType === 'video') {
+        const el = document.createElement('video');
+        el.src = s.mediaUrl;
+        el.autoplay = true;
+        el.playsInline = true;
+        el.controls = false;
+        el.muted = false;
+        // Both onended (video finished) and the rAF timer (driven by
+        // duration metadata) call nextSlide. Use the slide token so the
+        // first one to fire wins and the other becomes a no-op.
+        el.onended = () => {
+          if (token !== v.slideToken) return;
+          nextSlide();
+        };
+        el.onloadedmetadata = () => {
+          const ms = Math.round((el.duration || 5) * 1000);
+          durationMs = Math.min(15000, Math.max(2000, ms));
+          startTimer(durationMs);
+        };
+        // If the video errors out (network, codec, CORS) neither
+        // onloadedmetadata nor onended ever fires, so without this the
+        // viewer would freeze on a blank frame. Fall back to 5s so the
+        // user can still progress.
+        el.onerror = () => {
+          if (token !== v.slideToken) return;
+          startTimer(5000);
+        };
+        media.appendChild(el);
+      } else {
+        const img = document.createElement('img');
+        img.src = s.mediaUrl;
+        img.alt = '';
+        media.appendChild(img);
+        startTimer(5000);
+      }
+      // bump view count silently
+      api(`/api/stories/${s.id}/view`, { method: 'POST' }).catch(() => {});
+      // mark seen locally
+      s.seen = true;
+      v.group.allSeen = v.group.stories.every((x) => x.seen);
+    };
+    const startTimer = (ms) => {
+      clearTimer();
+      v.started = Date.now();
+      v.duration = ms;
+      // Pin token: tick belongs to whichever slide started this timer.
+      // If the slide changes underneath us, abort silently.
+      const myToken = v.slideToken;
+      const tick = () => {
+        if (myToken !== v.slideToken) return;
+        if (v.paused) return;
+        const elapsed = Date.now() - v.started;
+        const pct = Math.min(100, (elapsed / ms) * 100);
+        const bar = $('#storyViewerBars').children[v.idx];
+        if (bar) bar.firstChild.style.width = pct + '%';
+        if (elapsed >= ms) return nextSlide();
+        v.timer = requestAnimationFrame(tick);
+      };
+      v.timer = requestAnimationFrame(tick);
+    };
+    const clearTimer = () => {
+      if (v.timer) cancelAnimationFrame(v.timer);
+      v.timer = 0;
+    };
+    const nextSlide = () => {
+      clearTimer();
+      v.idx += 1;
+      if (v.idx >= v.group.stories.length) {
+        // Go to next user with unseen stories, else close.
+        const groups = state.stories.groups || [];
+        const here = groups.findIndex((g) => g.author.userId === v.group.author.userId);
+        const after = groups.slice(here + 1).find((g) => !g.allSeen);
+        if (after) { state.stories.viewer.group = after; v.group = after; v.idx = 0; renderSlide(); return; }
+        closeStoryViewer(); renderStoriesRail(); return;
+      }
+      renderSlide();
+    };
+    const prevSlide = () => {
+      clearTimer();
+      v.idx = Math.max(0, v.idx - 1);
+      renderSlide();
+    };
+    $('#storyViewerNext').onclick = nextSlide;
+    $('#storyViewerPrev').onclick = prevSlide;
+    $('#storyViewerClose').onclick = closeStoryViewer;
+    state.stories.viewer.cleanup = clearTimer;
+    viewer.classList.remove('hidden');
+    document.body.classList.add('no-scroll');
+    renderSlide();
+  }
+
+  function closeStoryViewer() {
+    const viewer = $('#storyViewer');
+    if (viewer) viewer.classList.add('hidden');
+    document.body.classList.remove('no-scroll');
+    if (state.stories.viewer) {
+      // Invalidate any in-flight slide callbacks (video onended/onerror,
+      // queued rAF ticks). They captured the viewer object and check
+      // their own token against v.slideToken — bumping it here makes
+      // those late firings no-ops, which avoids a TypeError when the
+      // user closes the viewer mid-video.
+      state.stories.viewer.slideToken += 1;
+      if (state.stories.viewer.cleanup) state.stories.viewer.cleanup();
+    }
+    state.stories.viewer = null;
+    renderStoriesRail();
+  }
+
+  function setupStories() {
+    loadStories().catch(() => {});
+    // backdrop click on uploader closes
+    bindModalDismiss('#storyUploadModal', '#storyUploadClose');
+    // refresh once a minute (TTL ticks)
+    setInterval(() => { if (!document.hidden) loadStories().catch(() => {}); }, 60_000);
+  }
+
+  // ============================================================
+  // Web Push notifications. Registers `/sw.js` and asks for
+  // permission on first relevant interaction. Subscriptions are
+  // stored server-side and used by /api/messages on @mention/DM.
+  // ============================================================
+  state.push = { registration: null, subscription: null, publicKey: '' };
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  // Single SW message handler reference so addEventListener naturally
+  // deduplicates across multiple setupPushNotifications() calls (boot,
+  // login, register). Each call would otherwise add a fresh anonymous
+  // listener and notification clicks would route the SPA N times.
+  function onSwMessage(ev) {
+    const d = ev.data || {};
+    if (d.type === 'notification:click' && d.data && d.data.url) {
+      try { go(d.data.url, true); } catch (_e) { /* ignore */ }
+    }
+  }
+
+  async function setupPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      state.push.registration = reg;
+    } catch (e) {
+      console.warn('SW register failed', e);
+      return;
+    }
+    // SW message handler — same reference each call so addEventListener
+    // dedupes (no-op when already attached).
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    // If permission already granted and we have a subscription, refresh server.
+    try {
+      const r = await api('/api/push/key');
+      state.push.publicKey = r.publicKey || '';
+    } catch (_e) { /* not configured yet */ }
+    if (Notification.permission === 'granted' && state.me && state.push.publicKey) {
+      ensurePushSubscription().catch(() => {});
+    } else if (state.me && Notification.permission === 'default') {
+      // Show banner once per session.
+      try { if (sessionStorage.getItem('pushBannerDismissed') !== '1') showPushBanner(); } catch (_e) { showPushBanner(); }
+    }
+  }
+
+  function showPushBanner() {
+    const b = $('#pushBanner');
+    if (!b) return;
+    b.classList.remove('hidden');
+    const later = $('#pushBannerLater');
+    const enable = $('#pushBannerEnable');
+    if (later) later.onclick = () => {
+      b.classList.add('hidden');
+      try { sessionStorage.setItem('pushBannerDismissed', '1'); } catch (_e) { /* ignore */ }
+    };
+    if (enable) enable.onclick = async () => {
+      enable.disabled = true;
+      try {
+        const granted = await ensurePushSubscription();
+        if (granted) flashToast('Notificaciones activadas');
+        else flashToast('No se pudo activar (¿bloqueaste el permiso?)');
+      } finally {
+        enable.disabled = false;
+        b.classList.add('hidden');
+      }
+    };
+  }
+
+  async function ensurePushSubscription() {
+    if (!state.push.registration || !state.push.publicKey) return false;
+    if (Notification.permission === 'denied') return false;
+    if (Notification.permission === 'default') {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return false;
+    }
+    const reg = state.push.registration;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(state.push.publicKey),
+      });
+    }
+    state.push.subscription = sub;
+    try {
+      await api('/api/push/subscribe', {
+        method: 'POST',
+        body: { subscription: sub.toJSON() },
+      });
+    } catch (e) {
+      console.warn('push subscribe', e.message);
+      return false;
+    }
+    return true;
+  }
+
   // ----- Boot -----
   async function boot() {
     setupNav();
@@ -2373,6 +2811,8 @@
     setupDmControls();
     setupMobileDrawer();
     setupHeaderSearch();
+    setupStories();
+    setupPushNotifications().catch(() => {});
   }
 
   // ============================================================

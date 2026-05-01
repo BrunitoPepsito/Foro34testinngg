@@ -3631,3 +3631,281 @@ img.emoji {
   .invite-link-row { flex-direction: column; }
   .dm-picker-results { max-height: 50vh; }
 }
+
+/* ============================================================
+   Phase 4 — Stories rail + viewer,
+   push notifications banner, story uploader.
+   ============================================================ */
+
+/* --- Stories rail (Instagram-like row above the chat grid) --- */
+.stories-rail {
+  padding: 10px 14px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.stories-rail.hidden { display: none; }
+.stories-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+  padding-bottom: 4px;
+}
+.stories-row::-webkit-scrollbar { height: 6px; }
+.stories-row::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.story-tile {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  width: 70px;
+  color: var(--fg);
+}
+.story-ring {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  padding: 3px;
+  background: linear-gradient(45deg, #6b7280 0%, #6b7280 100%);
+}
+.story-ring.unseen {
+  background: linear-gradient(45deg, #f59e0b, #ef4444 50%, #8b5cf6);
+}
+.story-ring.seen { background: var(--border); }
+.story-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--bg-elev);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.story-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.story-avatar-letter {
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--muted);
+}
+.story-tile-name {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 70px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.story-tile-add .story-tile-plus {
+  position: absolute;
+  right: 4px;
+  bottom: 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent, #7c5cff);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  border: 2px solid var(--bg);
+}
+
+/* --- Story uploader modal --- */
+.story-upload-preview {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  max-height: 50vh;
+  border-radius: 12px;
+  background: var(--bg-elev);
+  border: 2px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.story-upload-preview img,
+.story-upload-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.story-upload-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.story-upload-change {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.7);
+  border: 0;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* --- Story viewer (full-screen overlay) --- */
+.story-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.story-viewer.hidden { display: none; }
+.story-viewer-bars {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  z-index: 3;
+}
+.story-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.story-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: white;
+  transition: width 60ms linear;
+}
+.story-viewer-head {
+  position: absolute;
+  top: 28px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 3;
+  color: white;
+}
+.story-viewer-author { display: flex; align-items: center; gap: 10px; }
+.story-viewer-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.story-viewer-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.story-viewer-name { font-weight: 600; font-size: 14px; }
+.story-viewer-time { font-size: 12px; opacity: 0.7; }
+.story-viewer-actions { display: flex; gap: 8px; }
+.story-viewer-actions .icon-btn { color: white; background: rgba(0,0,0,0.3); }
+.story-viewer-media {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.story-viewer-media img,
+.story-viewer-media video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.story-viewer-caption {
+  position: absolute;
+  bottom: 70px;
+  left: 16px;
+  right: 16px;
+  color: white;
+  text-align: center;
+  font-size: 14px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  z-index: 3;
+  pointer-events: none;
+}
+.story-viewer-tap {
+  position: absolute;
+  top: 60px;
+  bottom: 60px;
+  width: 40%;
+  background: transparent;
+  border: 0;
+  z-index: 2;
+  cursor: pointer;
+}
+.story-viewer-tap-prev { left: 0; }
+.story-viewer-tap-next { right: 0; }
+
+/* --- Push notifications banner --- */
+.push-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 80;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+}
+.push-banner.hidden { display: none; }
+.push-banner > .ic { color: var(--accent, #7c5cff); flex: 0 0 auto; }
+.push-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  font-size: 13px;
+}
+.push-banner-text strong { font-size: 14px; }
+.push-banner-text span { color: var(--muted); }
+.push-banner-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.push-banner-actions .btn-secondary,
+.push-banner-actions .btn-primary { padding: 6px 12px; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .push-banner { flex-direction: column; align-items: stretch; text-align: center; }
+  .push-banner-actions { justify-content: center; }
+  .stories-rail { padding: 8px 10px 4px; }
+  .story-tile { width: 60px; }
+  .story-ring { width: 56px; height: 56px; }
+}
+
+.no-scroll { overflow: hidden; }
